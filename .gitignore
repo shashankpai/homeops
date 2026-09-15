@@ -10,3 +10,6 @@ build/cloud-config.yaml
 *.pem
 *.id_rsa
 id_rsa*
+
+# Episode narration files (kept private, not pushed to GitHub)
+episodes/**/narration.md
