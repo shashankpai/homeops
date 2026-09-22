@@ -140,11 +140,11 @@ Everything is demonstrated on a safe, isolated 500 MB loopback filesystem on an 
 22:30 - Who runs logrotate? (systemd timer)
 24:30 - THE SURPRISE: deleted file, disk space not freed
 30:40 - copytruncate deep dive
-33:30 - Nginx production log-reopen + live demo
-37:00 - Complete troubleshooting checklist
-39:00 - Prevention and best practices
-41:30 - Cleanup and reset
-43:00 - Recap and outro
+33:30 - Nginx production log-reopen + live demo with lsof
+38:00 - Complete troubleshooting checklist
+40:00 - Prevention and best practices
+42:30 - Cleanup and reset
+44:00 - Recap and outro
 
 🔗 Related episodes:
 [Episode 02 — link when published]
@@ -233,7 +233,7 @@ Public
 Practical Linux/SRE Troubleshooting — Episode 01
 
 ### Estimated Duration
-~44 minutes
+~45 minutes
 
 ### Content Rating
 No sensitive content (educational technical content)

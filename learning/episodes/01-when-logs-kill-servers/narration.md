@@ -1122,7 +1122,7 @@ So don't think of `copytruncate` as universally the best option. It's a pragmati
 
 ---
 
-## Phase 14 — Production-Style Log Reopen with Nginx + Live Demo (33:30 – 37:00)
+## Phase 14 — Production-Style Log Reopen with Nginx + Live Demo (33:30 – 38:00)
 
 [33:30]
 
@@ -1228,33 +1228,83 @@ Look at that. `app.log.1` has the old log lines — from before rotation. And `a
 
 [36:50]
 
-Now let me show you what happens WITHOUT the signal — the problem this solves. I'll switch back to our original app that does NOT handle signals, and rotate again:
+Now let me show you what happens WITHOUT the signal — the problem this solves. I'll switch back to our non-signal app and use `lsof` to prove what's happening at the file descriptor level.
 
 ```bash
 pkill -f myapp-loggen-reopen 2>/dev/null
 sleep 2
 rm -f /var/log/myapp/app.log*
 nohup /usr/local/bin/myapp-loggen-fast.sh > /dev/null 2>&1 &
+NON_SIGNAL_PID=$!
+echo "Non-signal app PID: $NON_SIGNAL_PID"
 sleep 3
+```
+
+[36:58]
+
+Before rotation, let me check which file the app's file descriptor is pointing to:
+
+```bash
+echo "=== BEFORE rotation: app's FD 1 points to app.log ==="
+sudo lsof -p "$NON_SIGNAL_PID" | grep app.log
+```
+
+[37:02]
+
+There it is — FD 1 (stdout) points to `/var/log/myapp/app.log`. The app is writing to the correct file. Now let me force a rotation:
+
+```bash
 sudo logrotate -f /etc/logrotate.d/myapp-reopen
-sleep 2
-echo "--- app.log (EMPTY — app not writing here) ---"
-ls -lh /var/log/myapp/app.log
-echo "--- app.log.1 (app STILL writing here!) ---"
+sleep 1
+```
+
+[37:08]
+
+Now check the file descriptor again:
+
+```bash
+echo "=== AFTER rotation: app's FD 1 points to app.log.1 (STALE!) ==="
+sudo lsof -p "$NON_SIGNAL_PID" | grep app.log
+```
+
+[37:15]
+
+This is the smoking gun. After rotation, the app's file descriptor is now pointing to `/var/log/myapp/app.log.1` — NOT the new `app.log`. The file descriptor is stale. The app is still alive, still writing, but to the wrong file.
+
+[37:25]
+
+Let me verify with file sizes:
+
+```bash
+echo "=== File sizes after rotation ==="
+ls -lh /var/log/myapp/app.log*
+echo "--- New app.log (empty) ---"
+tail -3 /var/log/myapp/app.log
+echo "--- app.log.1 (still growing!) ---"
 tail -3 /var/log/myapp/app.log.1
 ```
 
-[37:00]
+[37:35]
 
-See that? `app.log` is empty — zero bytes. The app is NOT writing to it. And `app.log.1` is still growing — the app is still writing to the old file descriptor, which now points to the rotated file. The postrotate script sent SIGHUP, but the original app doesn't handle it, so it just ignored the signal.
+See that? `app.log` is empty — zero bytes. `app.log.1` is still growing. The postrotate script sent SIGHUP, but the app doesn't handle it, so it ignored the signal. The file descriptor became stale.
 
-This is exactly the problem that `copytruncate` solves differently — by truncating in place instead of moving and signaling. And it's exactly why production apps like Nginx support log reopening. Rotate plus signal equals clean. No race window, no extra copy, no lost log lines.
+[37:45]
+
+This is exactly why logrotate needs to talk to the application. Without the signal, rotation breaks the log pipeline. The app's file descriptor points to the wrong file. The `postrotate` + `SIGHUP` mechanism is how logrotate tells the app: "I just rotated your log. Close the old file descriptor and open a new one." That's what the signal-aware version does. That's what Nginx does. And that's why it's the production-grade approach.
+
+[37:55]
+
+No race window. No extra copy. No lost log lines. Just clean, reliable log rotation.
+
+[38:00]
+
+That's the core concept: logrotate rotates the file, the application reopens it. Together, they keep logs flowing cleanly.
 
 ---
 
-## Phase 15 — Real Incident Troubleshooting Checklist (37:00 – 39:00)
+## Phase 15 — Real Incident Troubleshooting Checklist (38:00 – 40:00)
 
-[37:00]
+[38:00]
 
 Let me put together the complete troubleshooting flow we've been following. This is the checklist you'd use during a real disk-full incident.
 
@@ -1323,9 +1373,9 @@ Step four: run `lsof +L1` to check for deleted-but-open files holding space. Fix
 
 ---
 
-## Phase 16 — Prevention (39:00 – 41:30)
+## Phase 16 — Prevention (40:00 – 42:30)
 
-[39:00]
+[40:00]
 
 The best incident is the one that never happens. So let's talk about prevention.
 
@@ -1371,9 +1421,9 @@ The golden rule is this: the goal is not simply "delete logs." The goal is to es
 
 ---
 
-## Phase 17 — Cleanup / Reset (41:30 – 43:00)
+## Phase 17 — Cleanup / Reset (42:30 – 44:00)
 
-[41:30]
+[42:30]
 
 Alright, let's clean up the demo so your VM is back to its original state. I'll warn you — these next commands are destructive, so don't run them unless you're done with the demo.
 
@@ -1436,9 +1486,9 @@ Everything is cleaned up. The VM is back to its original state.
 
 ---
 
-## Outro (43:00 – 44:00)
+## Outro (44:00 – 45:00)
 
-[43:00]
+[44:00]
 
 So let's recap what we covered today.
 

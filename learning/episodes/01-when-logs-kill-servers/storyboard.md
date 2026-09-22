@@ -399,7 +399,7 @@ These 5 visual sequences appear multiple times throughout the episode. They are 
 
 ---
 
-### Phase 14 — Nginx Production Example + Live Reopen Demo (33:30 – 37:00)
+### Phase 14 — Nginx Production Example + Live Reopen Demo (33:30 – 38:00)
 
 | Time | Narration Cue | Terminal | Expected Output | Visual | On-Screen Text |
 |------|---------------|----------|-----------------|--------|----------------|
@@ -414,63 +414,70 @@ These 5 visual sequences appear multiple times throughout the episode. They are 
 | 36:15 | "Force a rotation:" | `sudo logrotate -f /etc/logrotate.d/myapp-reopen` | (silent) | Terminal command. | "Rotate + send SIGHUP" |
 | 36:25 | "Let's see what happened:" | `ls -lh /var/log/myapp/ && tail ...` | app.log has "reopened" marker + new lines; app.log.1 has old lines | Terminal output. Split view: new app.log vs old app.log.1. | "app.log: NEW lines ✓ / app.log.1: OLD lines ✓" |
 | 36:35 | "The app caught the signal and reopened." | — | — | Diagram: SIGHUP → trap → exec >> app.log → new fd. | "SIGHUP → close old fd → open new app.log" |
-| 36:50 | "Now WITHOUT the signal — the problem:" | Switch to non-signal app, rotate again | app.log EMPTY, app.log.1 still growing | Terminal output. `app.log` size = 0 in red. `app.log.1` growing in red. | "WITHOUT signal: app.log = 0 bytes ✗ / app.log.1 still growing ✗" |
-| 37:00 | "Rotate + signal = clean. No race window, no lost lines." | — | — | Comparison: copytruncate vs postrotate vs no-reopen. | "copytruncate / postrotate+signal / (broken: no signal)" |
+| 36:50 | "Now WITHOUT the signal — the problem:" | Start non-signal app, capture PID | PID printed | Terminal: start app, save PID. | "Non-signal app: no SIGHUP handler" |
+| 36:58 | "Before rotation, let me check the file descriptor:" | `sudo lsof -p "$NON_SIGNAL_PID" \| grep app.log` | FD 1w → /var/log/myapp/app.log | Terminal output. Highlight the FD line. | "BEFORE: FD 1w → app.log ✓" |
+| 37:02 | "FD 1 points to app.log. The app is writing to the correct file." | — | — | Diagram: App → FD 1 → app.log (correct). | "FD 1 = stdout = app.log" |
+| 37:08 | "Now force a rotation:" | `sudo logrotate -f /etc/logrotate.d/myapp-reopen` | (silent) | Terminal command. | "Rotate..." |
+| 37:15 | "Check the file descriptor again:" | `sudo lsof -p "$NON_SIGNAL_PID" \| grep app.log` | FD 1w → /var/log/myapp/app.log.1 | Terminal output. Highlight the FD line in RED. | "AFTER: FD 1w → app.log.1 ✗ (STALE!)" |
+| 37:25 | "This is the smoking gun. FD now points to app.log.1 — the WRONG file." | — | — | Diagram: App → FD 1 → app.log.1 (stale inode). | "FD 1 = stale = app.log.1" |
+| 37:35 | "Verify with file sizes:" | `ls -lh /var/log/myapp/app.log* && tail ...` | app.log = 0 bytes, app.log.1 growing | Terminal output. `app.log` in red (0 bytes), `app.log.1` in yellow (growing). | "app.log = 0 bytes ✗ / app.log.1 still growing ✗" |
+| 37:45 | "This is why logrotate needs to talk to the app." | — | — | Diagram: logrotate → postrotate → SIGHUP → app. | "logrotate must signal the app" |
+| 37:55 | "The signal tells the app: close the old FD, open a new one." | — | — | Diagram: SIGHUP → close(old FD) → open(new FD) → app.log. | "SIGHUP = close old + open new" |
+| 38:00 | "That's the core concept: logrotate rotates, app reopens." | — | — | Summary card. | "rotate + reopen = clean log lifecycle" |
 
 ---
 
-### Phase 15 — Troubleshooting Checklist (37:00 – 39:00)
+### Phase 15 — Troubleshooting Checklist (38:00 – 40:00)
 
 | Time | Narration Cue | Terminal | Expected Output | Visual | On-Screen Text |
 |------|---------------|----------|-----------------|--------|----------------|
-| 37:00 | "The complete troubleshooting flow." | — | — | Full checklist diagram appears, building step by step. | "SRE Disk-Full Checklist" |
-| 37:10 | — | — | — | Diagram: DISK ALERT → df -h → df -i → du → find → is it a log? → logrotate/lsof → verify → prevention. | — |
-| 38:00 | "Step one: df -h, then df -i." | — | — | First two boxes light up. | "1. df -h (bytes) + df -i (inodes)" |
-| 38:20 | "Step two: du, then find." | — | — | Next two boxes light up. | "2. du (directories) + find (large files)" |
-| 38:30 | "Step three: is it a log? Check logrotate." | — | — | Branch: YES → logrotate config. NO → other consumers. | "3. Log? → check logrotate / Other? → investigate" |
-| 38:55 | "Step four: lsof +L1. Fix. Verify. Prevent." | — | — | Final boxes light up. | "4. lsof +L1 → fix → verify → prevent" |
+| 38:00 | "The complete troubleshooting flow." | — | — | Full checklist diagram appears, building step by step. | "SRE Disk-Full Checklist" |
+| 38:10 | — | — | — | Diagram: DISK ALERT → df -h → df -i → du → find → is it a log? → logrotate/lsof → verify → prevention. | — |
+| 38:20 | "Step one: df -h, then df -i." | — | — | First two boxes light up. | "1. df -h (bytes) + df -i (inodes)" |
+| 38:40 | "Step two: du, then find." | — | — | Next two boxes light up. | "2. du (directories) + find (large files)" |
+| 38:50 | "Step three: is it a log? Check logrotate." | — | — | Branch: YES → logrotate config. NO → other consumers. | "3. Log? → check logrotate / Other? → investigate" |
+| 39:15 | "Step four: lsof +L1. Fix. Verify. Prevent." | — | — | Final boxes light up. | "4. lsof +L1 → fix → verify → prevent" |
 
 ---
 
-### Phase 16 — Prevention (39:00 – 41:30)
+### Phase 16 — Prevention (40:00 – 42:30)
 
 | Time | Narration Cue | Terminal | Expected Output | Visual | On-Screen Text |
 |------|---------------|----------|-----------------|--------|----------------|
-| 39:00 | "The best incident is the one that never happens." | — | — | Section title card. | "Prevention" |
-| 39:05 | "Every app needs a logrotate config." | — | — | Checklist item 1 appears. | "1. Logrotate config for every app" |
-| 39:25 | "Always compress." | — | — | Checklist item 2. Size comparison: 100 MB → 8 MB. | "2. Always compress (10-20x reduction)" |
-| 39:40 | "Sensible retention." | — | — | Checklist item 3. Formula: volume × retention × compression. | "3. Sensible retention (based on capacity + needs)" |
-| 39:55 | "Use postrotate for apps that support it." | — | — | Checklist item 4. | "4. postrotate > copytruncate (when supported)" |
-| 40:10 | "Monitor disk. Alert at 80% and 90%." | — | — | Checklist item 5. Gauge animation: green → yellow (80%) → red (90%). | "5. Alert at 80% / 90% — never hit 100%" |
-| 40:25 | "Centralized logging for large fleets." | — | — | Checklist item 6. Diagram: multiple hosts → centralized log system. | "6. Centralized logging (ELK, Loki, Grafana)" |
-| 40:45 | "Container logs are different." | — | — | Checklist item 7. Docker logo. | "7. Container logs ≠ host logs (use log driver rotation)" |
-| 41:05 | "Config management for fleet consistency." | — | — | Checklist item 8. Ansible logo. | "8. Ansible/Puppet/Chef for fleet-wide consistency" |
-| 41:20 | "Review log volume after app changes." | — | — | Checklist item 9. | "9. Review log volume after deployments" |
-| 41:30 | "The golden rule: predictable log lifecycle." | — | — | Full-screen card. | "GOAL: predictable log lifecycle — not just 'delete logs'" |
+| 40:00 | "The best incident is the one that never happens." | — | — | Section title card. | "Prevention" |
+| 40:05 | "Every app needs a logrotate config." | — | — | Checklist item 1 appears. | "1. Logrotate config for every app" |
+| 40:25 | "Always compress." | — | — | Checklist item 2. Size comparison: 100 MB → 8 MB. | "2. Always compress (10-20x reduction)" |
+| 40:40 | "Sensible retention." | — | — | Checklist item 3. Formula: volume × retention × compression. | "3. Sensible retention (based on capacity + needs)" |
+| 40:55 | "Use postrotate for apps that support it." | — | — | Checklist item 4. | "4. postrotate > copytruncate (when supported)" |
+| 41:10 | "Monitor disk. Alert at 80% and 90%." | — | — | Checklist item 5. Gauge animation: green → yellow (80%) → red (90%). | "5. Alert at 80% / 90% — never hit 100%" |
+| 41:25 | "Centralized logging for large fleets." | — | — | Checklist item 6. Diagram: multiple hosts → centralized log system. | "6. Centralized logging (ELK, Loki, Grafana)" |
+| 41:45 | "Container logs are different." | — | — | Checklist item 7. Docker logo. | "7. Container logs ≠ host logs (use log driver rotation)" |
+| 42:05 | "Config management for fleet consistency." | — | — | Checklist item 8. Ansible logo. | "8. Ansible/Puppet/Chef for fleet-wide consistency" |
+| 42:20 | "Review log volume after app changes." | — | — | Checklist item 9. | "9. Review log volume after deployments" |
+| 42:30 | "The golden rule: predictable log lifecycle." | — | — | Full-screen card. | "GOAL: predictable log lifecycle — not just 'delete logs'" |
 
 ---
 
-### Phase 17 — Cleanup / Reset (41:30 – 43:00)
+### Phase 17 — Cleanup / Reset (42:30 – 44:00)
 
 | Time | Narration Cue | Terminal | Expected Output | Visual | On-Screen Text |
 |------|---------------|----------|-----------------|--------|----------------|
-| 41:30 | "Let's clean up the demo." | — | — | Warning banner. | "⚠ DESTRUCTIVE COMMANDS — cleanup only" |
-| 41:42 | "Stop, remove, unmount, delete:" | Series of cleanup commands | Various outputs | Terminal commands in sequence. Each labeled. | "Stop generator / Remove configs / Unmount / Remove image / Remove scripts + PID" |
-| 42:32 | "Verify everything is gone:" | Verification commands | All "good" messages | Terminal output. All checks show "(good)". | "VM restored to original state ✓" |
+| 42:30 | "Let's clean up the demo." | — | — | Warning banner. | "⚠ DESTRUCTIVE COMMANDS — cleanup only" |
+| 42:42 | "Stop, remove, unmount, delete:" | Series of cleanup commands | Various outputs | Terminal commands in sequence. Each labeled. | "Stop generator / Remove configs / Unmount / Remove image / Remove scripts + PID" |
+| 43:32 | "Verify everything is gone:" | Verification commands | All "good" messages | Terminal output. All checks show "(good)". | "VM restored to original state ✓" |
 
 ---
 
-### Outro (43:00 – 44:00)
+### Outro (44:00 – 45:00)
 
 | Time | Narration Cue | Terminal | Expected Output | Visual | On-Screen Text |
 |------|---------------|----------|-----------------|--------|----------------|
-| 43:00 | "Let's recap." | — | — | Recap card. | "Recap" |
-| 43:05 | "df → du → find → app.log" | — | — | Visual Sequence 2 (troubleshooting flow) replays briefly. | "Investigated: df → du → find → root cause" |
-| 43:25 | "logrotate: rotate + compress + retain" | — | — | Visual Sequence 4 (logrotate lifecycle) replays briefly. | "Fixed: logrotate (95% → 49%)" |
-| 43:40 | "Bad config: rotation alone isn't enough." | — | — | Brief flash of bad config comparison. | "Bad config: rotation ≠ solution" |
-| 43:50 | "Log reopen live: signal-aware app." | — | — | Brief flash of the reopen demo: SIGHUP → new app.log. | "Log reopen: SIGHUP → new fd → clean" |
-| 44:00 | "Surprise: deleted file, space not freed. lsof +L1." | — | — | Visual Sequence 5 (deleted-but-open) replays briefly. | "Surprise: lsof +L1 — deleted but open" |
-| 44:00 | "Subscribe for more. See you next time." | — | — | End card. Subscribe button. Links to next episode. | "Subscribe / Next: [episode 02 title]" |
+| 44:00 | "Let's recap." | — | — | Recap card. | "Recap" |
+| 44:05 | "df → du → find → app.log" | — | — | Visual Sequence 2 (troubleshooting flow) replays briefly. | "Investigated: df → du → find → root cause" |
+| 44:25 | "logrotate: rotate + compress + retain" | — | — | Visual Sequence 4 (logrotate lifecycle) replays briefly. | "Fixed: logrotate (95% → 49%)" |
+| 44:40 | "Bad config: rotation alone isn't enough." | — | — | Brief flash of bad config comparison. | "Bad config: rotation ≠ solution" |
+| 44:50 | "Log reopen with lsof proof: FD stale without signal." | — | — | Brief flash of the lsof demo: BEFORE (FD → app.log) vs AFTER (FD → app.log.1). | "lsof proof: FD stale without SIGHUP" |
+| 45:00 | "Subscribe for more. See you next time." | — | — | End card. Subscribe button. Links to next episode. | "Subscribe / Next: [episode 02 title]" |
 
 ---
 

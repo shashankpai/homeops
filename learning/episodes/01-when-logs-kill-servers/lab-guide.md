@@ -469,26 +469,35 @@ kill %1 2>/dev/null; sleep 1
 ```
 
 ```bash
-# What it does: Creates a faster version that writes larger log lines.
-# Why we run it: Fill the 500 MB filesystem faster for the demo recording.
+# What it does: Creates a faster version that opens the log file ONCE and keeps
+#                the file descriptor open, then writes to it continuously.
+# Why we run it: (1) Fill the 500 MB filesystem faster for demo pacing.
+#                (2) Keep the file descriptor open so we can demonstrate the
+#                    "stale FD" problem with lsof in Phase 14.
 
 sudo tee /usr/local/bin/myapp-loggen-fast.sh > /dev/null << 'SCRIPT'
 #!/bin/bash
 #
 # myapp-loggen-fast.sh — Fast log generator for demo pacing
+# Opens the log file ONCE and keeps the FD open.
 #
 
 LOGFILE="/var/log/myapp/app.log"
 mkdir -p /var/log/myapp
 REQ_ID=1000
 
+# Open the log ONCE and keep the file descriptor open.
+exec >> "$LOGFILE" 2>&1
+
 while true; do
     TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+
     if [ $((RANDOM % 10)) -eq 0 ]; then
-        echo "$TIMESTAMP ERROR request_id=$REQ_ID database timeout connection=pool-1 host=db.internal latency=5000ms" >> "$LOGFILE"
+        echo "$TIMESTAMP ERROR request_id=$REQ_ID database timeout connection=pool-1 host=db.internal latency=5000ms"
     else
-        echo "$TIMESTAMP INFO request_id=$REQ_ID request processed method=GET path=/api/v1/resource status=200 duration=15ms user=user@example.com" >> "$LOGFILE"
+        echo "$TIMESTAMP INFO request_id=$REQ_ID request processed method=GET path=/api/v1/resource status=200 duration=15ms user=user@example.com"
     fi
+
     REQ_ID=$((REQ_ID + 1))
 done
 SCRIPT
@@ -1928,68 +1937,126 @@ total 2.5M
 
 #### 18.6.6 Contrast: what happens WITHOUT the signal (the problem)
 
-To really appreciate the fix, let's see what happens when the app does NOT reopen the log. Let's temporarily use our original log generator (which does NOT handle signals) with the postrotate config:
+To really appreciate the fix, let's see what happens when the app does NOT reopen the log. Let's temporarily use the fast log generator (which does NOT handle signals) with the postrotate config. We'll use `lsof` to prove what's happening at the file descriptor level.
 
 ```bash
-# What it does: Stops the signal-aware app, starts the original (non-signal)
-#                app, and forces a rotation.
-# Why we run it: Show what happens when the app does NOT reopen its log
-#                after rotation. The app keeps writing to the OLD file
-#                descriptor, which now points to app.log.1 — NOT the new
-#                app.log. This is the problem that postrotate + signal solves.
+# What it does: Stops the signal-aware app, starts the non-signal app,
+#                and captures its PID.
+# Why we run it: We need the PID to use lsof to inspect file descriptors.
 
 # Stop the signal-aware app
 pkill -f myapp-loggen-reopen 2>/dev/null
 sleep 2
 rm -f /var/log/myapp/app.log*
 
-# Start the original (non-signal-aware) app
+# Start the non-signal-aware app and capture its PID
 nohup /usr/local/bin/myapp-loggen-fast.sh > /dev/null 2>&1 &
-echo "Non-signal app PID: $!"
+NON_SIGNAL_PID=$!
+echo "Non-signal app PID: $NON_SIGNAL_PID"
 
 sleep 3
-
-# Force rotation with the postrotate config
-# (The postrotate will try to send SIGHUP, but the original app ignores it)
-sudo logrotate -f /etc/logrotate.d/myapp-reopen
-
-sleep 2
-
-# Check where new logs are going
-echo "--- New app.log (should be EMPTY if app didn't reopen) ---"
-ls -lh /var/log/myapp/app.log
-echo "--- app.log.1 (app is STILL writing here!) ---"
-ls -lh /var/log/myapp/app.log.1
-echo "--- Proof: tail app.log.1 ---"
-tail -3 /var/log/myapp/app.log.1
-echo "--- Proof: tail app.log ---"
-tail -3 /var/log/myapp/app.log
 ```
 
 **Expected output (example):**
 ```
---- New app.log (should be EMPTY if app didn't reopen) ---
--rw-r----- 1 ubuntu ubuntu 0 Sep 15 10:52 /var/log/myapp/app.log
+Non-signal app PID: 12400
+```
 
---- app.log.1 (app is STILL writing here!) ---
+Now let's check the file descriptor BEFORE rotation:
+
+```bash
+# What it does: Shows which file the app's FD 1 (stdout) is pointing to.
+# Why we run it: Prove that before rotation, the app writes to app.log.
+
+echo "=== BEFORE rotation: app's FD 1 points to app.log ==="
+sudo lsof -p "$NON_SIGNAL_PID" | grep app.log
+```
+
+**Expected output (example):**
+```
+=== BEFORE rotation: app's FD 1 points to app.log ===
+myapp-loggen  12400 ubuntu  1w  REG  8,1  1234567 Sep 15 10:52 /var/log/myapp/app.log
+```
+
+**What we see:**
+- FD `1w` (write) points to `/var/log/myapp/app.log`
+- The app is writing to the correct file
+
+Now force a rotation:
+
+```bash
+# What it does: Forces logrotate to rotate the log using the postrotate config.
+# Why we run it: This is the critical moment. logrotate will:
+#                1. Move app.log → app.log.1
+#                2. Create a new empty app.log
+#                3. Run postrotate, which sends SIGHUP to the app
+#                4. The app IGNORES SIGHUP (it doesn't handle it)
+#                5. The app's old FD is now pointing to app.log.1
+
+sudo logrotate -f /etc/logrotate.d/myapp-reopen
+
+sleep 1
+```
+
+Now check the file descriptor AFTER rotation:
+
+```bash
+# What it does: Shows which file the app's FD 1 is pointing to AFTER rotation.
+# Why we run it: Prove that the app's FD is now stale — pointing to app.log.1
+#                instead of the new app.log.
+
+echo "=== AFTER rotation: app's FD 1 points to app.log.1 (STALE!) ==="
+sudo lsof -p "$NON_SIGNAL_PID" | grep app.log
+```
+
+**Expected output (example):**
+```
+=== AFTER rotation: app's FD 1 points to app.log.1 (STALE!) ===
+myapp-loggen  12400 ubuntu  1w  REG  8,1  1234567 Sep 15 10:52 /var/log/myapp/app.log.1
+```
+
+**This is the smoking gun:**
+- FD `1w` now points to `/var/log/myapp/app.log.1` — NOT the new `app.log`
+- The app's file descriptor is stale — it's pointing to the old inode
+- The app is still alive and still writing, but to the wrong file
+
+Verify by checking file sizes:
+
+```bash
+# What it does: Shows the current state of the log files.
+# Why we run it: Confirm that app.log is empty (new, not being written to)
+#                and app.log.1 is growing (old, still being written to).
+
+echo "=== File sizes after rotation ==="
+ls -lh /var/log/myapp/app.log*
+echo "--- New app.log (empty) ---"
+tail -3 /var/log/myapp/app.log
+echo "--- app.log.1 (still growing!) ---"
+tail -3 /var/log/myapp/app.log.1
+```
+
+**Expected output (example):**
+```
+=== File sizes after rotation ===
+-rw-r----- 1 ubuntu ubuntu    0 Sep 15 10:52 /var/log/myapp/app.log
 -rw-r--r-- 1 ubuntu ubuntu 5.2M Sep 15 10:52 /var/log/myapp/app.log.1
 
---- Proof: tail app.log.1 ---
-2026-09-15 10:52:03 INFO request_id=2104 request processed
-2026-09-15 10:52:03 INFO request_id=2105 request processed
-2026-09-15 10:52:03 INFO request_id=2106 request processed
-
---- Proof: tail app.log ---
+--- New app.log (empty) ---
 (empty)
+
+--- app.log.1 (still growing!) ---
+2026-09-15 10:52:03 INFO request_id=2104 request processed method=GET path=/api/v1/resource status=200 duration=15ms user=user@example.com
+2026-09-15 10:52:03 INFO request_id=2105 request processed method=GET path=/api/v1/resource status=200 duration=15ms user=user@example.com
+2026-09-15 10:52:03 INFO request_id=2106 request processed method=GET path=/api/v1/resource status=200 duration=15ms user=user@example.com
 ```
 
 **What we see:**
 - `app.log` is EMPTY (0 bytes) — the app is NOT writing to it.
-- `app.log.1` is GROWING — the app is still writing to the old file descriptor, which now points to `app.log.1`.
-- The `postrotate` script sent `SIGHUP`, but the original app doesn't handle it, so it ignored the signal.
-- **This is the problem that `copytruncate` solves differently** (by truncating in place instead of moving + signaling).
+- `app.log.1` is GROWING — the app is still writing to the old file descriptor.
+- The `postrotate` script sent `SIGHUP`, but the app doesn't handle it, so it ignored the signal.
+- **The file descriptor is stale** — proven with `lsof`.
 
-**Conclusion:** Without either `copytruncate` or a signal-aware reopen, rotation breaks the log pipeline. The app keeps writing to the wrong file.
+**Conclusion:** Without signal-aware log reopening, rotation breaks the log pipeline. The app's file descriptor becomes stale, pointing to the rotated file instead of the new one. This is why logrotate needs to communicate with the application — to tell it to close the old FD and open a new one. The `postrotate` + `SIGHUP` mechanism is how that communication happens.
 
 #### 18.6.7 Clean up the reopen demo
 

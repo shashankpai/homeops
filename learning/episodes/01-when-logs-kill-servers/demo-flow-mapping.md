@@ -19,11 +19,11 @@ This document maps each narration phase to the corresponding lab-guide sections 
 | **Phase 11: Who Runs Logrotate?** | 22:30–24:30 | 15.1–15.4 | Show scheduler: `systemctl status logrotate.timer` | Explain automation |
 | **Phase 12: The Surprise: Deleted-but-Open** | 24:30–30:40 | 16.1–16.9 | Deleted-but-open demo: delete file, check `lsof +L1`, reclaim space | The "aha!" moment |
 | **Phase 13: copytruncate Deep Dive** | 30:40–33:30 | 17 | Explain copytruncate (conceptual, no live demo) | Alternative approach |
-| **Phase 14: Production Log Reopen + Live Demo** | 33:30–37:00 | 18.6.1–18.6.6 | **Live reopen demo**: create signal-aware app, rotate, show reopen, contrast | NEW: Signal-aware app demo |
-| **Phase 15: Troubleshooting Checklist** | 37:00–39:00 | — | Show troubleshooting checklist diagram (no lab) | Summary diagram |
-| **Phase 16: Prevention & Best Practices** | 39:00–41:30 | — | Prevention best practices (no lab) | Conceptual |
-| **Phase 17: Cleanup / Reset** | 41:30–43:00 | 21 | Run cleanup commands | Restore VM to original state |
-| **Outro** | 43:00–44:00 | — | Recap, subscribe card | End screen |
+| **Phase 14: Production Log Reopen + Live Demo** | 33:30–38:00 | 18.6.1–18.6.6 | **Live reopen demo**: create signal-aware app, rotate, show reopen, then use `lsof` to prove stale FD without signal | NEW: Signal-aware app + lsof proof |
+| **Phase 15: Troubleshooting Checklist** | 38:00–40:00 | — | Show troubleshooting checklist diagram (no lab) | Summary diagram |
+| **Phase 16: Prevention & Best Practices** | 40:00–42:30 | — | Prevention best practices (no lab) | Conceptual |
+| **Phase 17: Cleanup / Reset** | 42:30–44:00 | 21 | Run cleanup commands | Restore VM to original state |
+| **Outro** | 44:00–45:00 | — | Recap, subscribe card | End screen |
 
 ## Key Demo Sections
 
@@ -67,10 +67,15 @@ This document maps each narration phase to the corresponding lab-guide sections 
 - **Lab sections:** 18.6.1–18.6.6 (signal-aware app)
 - **Duration:** ~3.5 minutes of screen time
 - **Key commands:** `tee`, `nohup`, `logrotate -f`, `tail`, `kill -HUP`
-- **Expected output:** 
+- **Expected output:**
   - Signal-aware app: `app.log` has "log reopened" marker + new lines, `app.log.1` has old lines
-  - Non-signal app: `app.log` is empty (0 bytes), `app.log.1` still growing
-- **What makes it special:** Shows the same mechanism as Nginx without installing Nginx
+  - Non-signal app BEFORE rotation: `lsof` shows FD 1w → `/var/log/myapp/app.log` ✓
+  - Non-signal app AFTER rotation: `lsof` shows FD 1w → `/var/log/myapp/app.log.1` ✗ (STALE!)
+- **What makes it special:**
+  - Shows the same mechanism as Nginx without installing Nginx
+  - Uses `lsof` to prove the stale file descriptor problem at the kernel level
+  - Demonstrates WHY logrotate needs to signal the application
+  - Teaches the core concept: rotation moves the inode, app's FD becomes stale without signal
 
 ### Cleanup (Phase 17)
 - **Lab sections:** 21 (cleanup commands)
@@ -86,22 +91,26 @@ This document maps each narration phase to the corresponding lab-guide sections 
 3. **Expected outputs are in the lab-guide** — match these when recording to ensure accuracy.
 
 ### Demo Pacing
-- **Total runtime:** ~44 minutes
+- **Total runtime:** ~45 minutes
 - **Setup:** ~2.5 min (Phase 3)
 - **Incident & Investigation:** ~4 min (Phases 4–5)
 - **Logrotate basics:** ~5 min (Phases 7–9)
 - **Bad config & scheduler:** ~4.5 min (Phases 10–11)
 - **Surprise moment:** ~6 min (Phase 12)
 - **copytruncate explanation:** ~3 min (Phase 13)
-- **Live reopen demo:** ~3.5 min (Phase 14) ← **Highlight**
-- **Checklist & prevention:** ~4.5 min (Phases 15–16)
+- **Live reopen demo with lsof:** ~4.5 min (Phase 14) ← **Enhanced Highlight**
+- **Checklist & prevention:** ~2 min (Phases 15–16)
 - **Cleanup:** ~1.5 min (Phase 17)
 
-### The Live Reopen Demo (Phase 14) is the Highlight
+### The Live Reopen Demo (Phase 14) is the Enhanced Highlight
 - It's the only place where the signal-aware app (`myapp-loggen-reopen.sh`) is used
 - Everything before uses the standard log generator (`myapp-loggen.sh` or `myapp-loggen-fast.sh`)
 - The contrast between signal-aware and non-signal-aware apps is the "aha!" moment
-- Make sure to clearly label which app is running at each step
+- **NEW:** The `lsof` proof shows the stale file descriptor at the kernel level:
+  - BEFORE rotation: FD 1w → app.log (correct)
+  - AFTER rotation: FD 1w → app.log.1 (stale, wrong inode)
+  - This is the "smoking gun" that proves WHY logrotate needs to signal the app
+- Make sure to clearly label which app is running at each step and highlight the FD change
 
 ### Syncing Narration & Lab-Guide
 If you update the narration timestamps, update this table accordingly. The lab-guide sections should remain stable — they're the "source of truth" for what commands to run.
