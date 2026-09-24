@@ -46,6 +46,45 @@ output "vm_placement" {
   }
 }
 
+output "minio_endpoint" {
+  description = "MinIO S3 API endpoint"
+  value       = "http://${var.minio_config.ip}:${var.minio_config.api_port}"
+}
+
+output "minio_console_url" {
+  description = "MinIO Web Console URL"
+  value       = "http://${var.minio_config.ip}:${var.minio_config.console_port}"
+}
+
+output "minio_credentials" {
+  description = "MinIO root credentials"
+  value = {
+    access_key = var.minio_config.root_user
+    secret_key = var.minio_config.root_password
+  }
+  sensitive = true
+}
+
+output "terraform_backend_config" {
+  description = "Terraform S3 backend configuration for MinIO"
+  value       = <<-EOT
+terraform {
+  backend "s3" {
+    bucket         = "${var.minio_config.bucket_name}"
+    key            = "k8s-under-the-hood/terraform.tfstate"
+    region         = "us-east-1"
+    endpoint       = "http://${var.minio_config.ip}:${var.minio_config.api_port}"
+    access_key     = "${var.minio_config.root_user}"
+    secret_key     = "${var.minio_config.root_password}"
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    skip_requesting_account_id  = true
+    use_path_style              = true
+  }
+}
+  EOT
+}
+
 output "next_steps" {
   description = "Next steps after Terraform apply"
   value       = <<-EOT
@@ -56,8 +95,13 @@ output "next_steps" {
       k8suth-worker1 (${var.vm_ips["worker1"]}) on ${var.vm_nodes["worker1"]}
       k8suth-worker2 (${var.vm_ips["worker2"]}) on ${var.vm_nodes["worker2"]}
 
+    MinIO State Backend:
+      Endpoint: http://${var.minio_config.ip}:${var.minio_config.api_port}
+      Console:  http://${var.minio_config.ip}:${var.minio_config.console_port}
+      Creds:    ${var.minio_config.root_user} / ${var.minio_config.root_password}
+
     Next steps:
-    1. Wait for VMs to boot (2-3 minutes; first run also downloads the
+    1. Wait for VMs and MinIO to boot (2-3 minutes; first run also downloads the
        Ubuntu cloud image ~600MB per node — subsequent runs reuse it)
     2. Run Ansible playbook to install K3s:
        cd lab/ansible

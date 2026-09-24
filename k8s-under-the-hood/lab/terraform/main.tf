@@ -233,7 +233,7 @@ resource "time_sleep" "wait_for_vms" {
 # ==============================================================================
 
 resource "local_file" "ansible_inventory" {
-  depends_on = [time_sleep.wait_for_vms]
+  depends_on = [time_sleep.wait_for_vms, null_resource.minio_bucket_setup]
 
   content = templatefile("${path.module}/../ansible/inventory.ini.tpl", {
     master_ip  = var.vm_ips["master"]

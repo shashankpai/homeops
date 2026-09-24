@@ -203,6 +203,15 @@ kubectl wait --for=condition=ready pod \
 echo -e "${GREEN}✓ Observability stack ready${NC}"
 echo ""
 
+# Print MinIO information
+echo -e "${YELLOW}Step 6: MinIO State Backend Information${NC}"
+
+MINIO_ENDPOINT=$(cd "$TERRAFORM_DIR" && terraform output -raw minio_endpoint)
+MINIO_CONSOLE=$(cd "$TERRAFORM_DIR" && terraform output -raw minio_console_url)
+
+echo -e "${GREEN}✓ MinIO deployed${NC}"
+echo ""
+
 # Summary
 echo -e "${GREEN}=== Setup Complete ===${NC}"
 echo ""
@@ -210,6 +219,11 @@ echo -e "${YELLOW}Cluster information:${NC}"
 echo "  Master: $MASTER_IP"
 echo "  Worker 1: $WORKER1_IP"
 echo "  Worker 2: $WORKER2_IP"
+echo ""
+echo -e "${YELLOW}MinIO State Backend:${NC}"
+echo "  API Endpoint: $MINIO_ENDPOINT"
+echo "  Console URL: $MINIO_CONSOLE"
+echo "  Credentials: minioadmin / minioadmin123"
 echo ""
 echo -e "${YELLOW}Access commands:${NC}"
 echo "  export KUBECONFIG=$KUBECONFIG_PATH"

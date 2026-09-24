@@ -86,6 +86,18 @@ make verify
 | **Observability** | Prometheus, Grafana, node-exporter, kube-state-metrics |
 | **kubeconfig** | `~/.kube/config-k8suth` |
 
+### MinIO State Backend
+
+MinIO is automatically deployed as an LXC container on the master node:
+
+```
+MinIO API:     http://192.168.1.90:9000
+MinIO Console: http://192.168.1.90:9001
+Credentials:   minioadmin / minioadmin123
+```
+
+MinIO stores Terraform state for multi-controller access. See `MULTI_CONTROLLER_MINIO_SETUP.md` for details on using MinIO as your Terraform backend from other controllers.
+
 ### Access the Lab
 
 ```bash
@@ -102,6 +114,9 @@ kubectl port-forward -n monitoring svc/prometheus 9090:9090
 # Access Grafana
 kubectl port-forward -n monitoring svc/grafana 3000:3000
 # Open http://localhost:3000 (admin/admin)
+
+# Access MinIO Console
+# Open http://192.168.1.90:9001 (minioadmin/minioadmin123)
 ```
 
 ---

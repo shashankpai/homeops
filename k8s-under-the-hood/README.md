@@ -40,6 +40,7 @@ make verify
 This creates:
 - 3 Ubuntu VMs on Proxmox, distributed across 3 physical hosts
   (master on pve4/.47, workers on pve2/.87 and pve3/.25 — no VMs on pve/.48)
+- MinIO LXC container (S3-compatible state backend) on master
 - K3s cluster (v1.36.3+k3s1)
 - Prometheus + Grafana + node-exporter + kube-state-metrics
 - kubeconfig at `~/.kube/config-k8suth`
