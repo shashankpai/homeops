@@ -137,13 +137,13 @@ k3s-install:
 	@echo "$(YELLOW)Waiting for VMs to be fully ready (2-3 minutes)...$(NC)"
 	@sleep 120
 	@echo "$(YELLOW)Verifying SSH connectivity...$(NC)"
-	@bash lab/scripts/setup.sh 2>&1 | grep -A 50 "Step 2: Installing K3s" || true
+	@LC_ALL=C.UTF-8 bash lab/scripts/setup.sh
 	@echo "$(GREEN)✓ K3s installed$(NC)"
 	@echo "$(YELLOW)Next: make observability-deploy$(NC)"
 
 observability-deploy:
 	@echo "$(GREEN)Deploying observability stack...$(NC)"
-	@bash -c 'export KUBECONFIG=~/.kube/config-k8suth; \
+	@bash -c 'set -e; export KUBECONFIG=~/.kube/config-k8suth; \
 	cd lab/observability; \
 	kubectl apply -f namespace.yaml; \
 	kubectl apply -f prometheus.yaml; \
@@ -152,8 +152,9 @@ observability-deploy:
 	kubectl apply -f kube-state-metrics.yaml; \
 	echo "$(GREEN)✓ Observability stack deployed$(NC)"; \
 	echo "$(YELLOW)Waiting for pods to be ready...$(NC)"; \
-	kubectl wait --for=condition=ready pod -l app=prometheus -n monitoring --timeout=300s 2>/dev/null || true; \
-	kubectl wait --for=condition=ready pod -l app=grafana -n monitoring --timeout=300s 2>/dev/null || true; \
+	kubectl wait --for=condition=ready pod -l app=prometheus -n monitoring --timeout=300s; \
+	kubectl wait --for=condition=ready pod -l app=grafana -n monitoring --timeout=300s; \
+	kubectl wait --for=condition=ready pod -l app=kube-state-metrics -n monitoring --timeout=300s; \
 	echo "$(GREEN)✓ Observability stack ready$(NC)"'
 
 # ============================================================================

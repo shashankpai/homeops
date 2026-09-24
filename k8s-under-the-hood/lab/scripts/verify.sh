@@ -112,9 +112,9 @@ echo -e "${YELLOW}Checking key metrics...${NC}"
 METRICS_FOUND=0
 
 for metric in "container_memory_working_set_bytes" "container_spec_memory_limit_bytes" "kube_pod_container_status_restarts_total"; do
-    if kubectl exec -n monitoring "$PROMETHEUS_POD" -- promtool query instant "$metric" &>/dev/null 2>&1; then
+    if kubectl exec -n monitoring "$PROMETHEUS_POD" -- promtool query instant http://localhost:9090 "$metric" &>/dev/null 2>&1; then
         echo -e "${GREEN}✓ $metric found${NC}"
-        ((METRICS_FOUND++))
+        METRICS_FOUND=$((METRICS_FOUND+1))
     fi
 done
 
