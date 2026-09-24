@@ -29,8 +29,9 @@ resource "null_resource" "minio_docker_setup" {
       # Wait for Docker daemon
       "sleep 5",
 
-      # Start MinIO container
-      "docker run -d \\",
+      # Start MinIO container (sudo: docker group membership from usermod
+      # above does not apply to the current SSH session)
+      "sudo docker run -d \\",
       "  --name minio \\",
       "  --restart always \\",
       "  -p ${var.minio_config.api_port}:9000 \\",
@@ -45,9 +46,12 @@ resource "null_resource" "minio_docker_setup" {
     ]
 
     connection {
-      type        = "ssh"
-      user        = "ubuntu"
-      private_key = file(var.ssh_private_key_path)
+      type = "ssh"
+      user = "ubuntu"
+      # Guard with fileexists() so validate/plan pass on controllers that
+      # haven't generated the lab key yet (setup.sh generates it). The key
+      # must exist when this provisioner actually runs.
+      private_key = fileexists("${path.module}/../ssh/id_rsa") ? file("${path.module}/../ssh/id_rsa") : ""
       host        = var.vm_ips["master"]
       timeout     = "5m"
     }
@@ -61,7 +65,7 @@ resource "null_resource" "minio_docker_setup" {
 resource "time_sleep" "wait_for_minio" {
   depends_on = [null_resource.minio_docker_setup]
 
-  create_duration = "30s"  # Wait 30 seconds for MinIO to start
+  create_duration = "30s" # Wait 30 seconds for MinIO to start
 }
 
 # ==============================================================================

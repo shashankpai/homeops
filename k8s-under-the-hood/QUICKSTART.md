@@ -43,7 +43,21 @@ chmod 600 ~/.proxmox-env
 source ~/.proxmox-env
 ```
 
-### 3. Verify Prerequisites
+### 3. One-Time SSH Access for Template Bootstrap
+
+The **first** setup bootstraps Ubuntu templates on each Proxmox node. This one-time step needs SSH access to the nodes (afterwards, everything is API-only):
+
+```bash
+# Authorize your key on each node
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.47  # pve4
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.87  # pve2
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.25  # pve3
+
+# Load key in ssh-agent (provider reads agent, NOT ~/.ssh/config)
+ssh-add ~/.ssh/id_ed25519
+```
+
+### 4. Verify Prerequisites
 
 ```bash
 cd /Users/Shashank.Pai/Proxmox/homeops/k8s-under-the-hood

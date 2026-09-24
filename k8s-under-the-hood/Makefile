@@ -1,5 +1,6 @@
 .PHONY: setup teardown verify demo-ep01 cleanup-ep01 help \
          tf-init tf-apply tf-destroy \
+         templates \
          k3s-install observability-deploy \
          minio-status
 
@@ -17,7 +18,8 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Step-by-Step Setup (Advanced):$(NC)"
 	@echo "  make tf-init        - Initialize Terraform"
-	@echo "  make tf-apply       - Provision VMs and MinIO (Terraform apply)"
+	@echo "  make templates     - Bootstrap Ubuntu templates on Proxmox nodes (ONE-TIME, needs SSH)"
+	@echo "  make tf-apply       - Provision VMs and MinIO (Terraform apply, API-only)"
 	@echo "  make k3s-install    - Install K3s on all nodes (Ansible)"
 	@echo "  make observability-deploy - Deploy Prometheus, Grafana, etc."
 	@echo ""
@@ -55,12 +57,65 @@ tf-init:
 	@echo "$(GREEN)Initializing Terraform...$(NC)"
 	cd lab/terraform && terraform init
 
+# ============================================================================
+# One-Time Template Bootstrap
+# ============================================================================
+# This is the ONLY step that requires SSH access to Proxmox nodes
+# (root@pve2, pve3, pve4). The image-to-disk import runs on each node.
+#
+# Prerequisites (on the controller running this):
+#   1. SSH key authorized on Proxmox nodes:
+#      ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.47
+#      ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.87
+#      ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.25
+#   2. Key loaded in ssh-agent (the provider reads the agent,
+#      NOT ~/.ssh/config):
+#      ssh-add ~/.ssh/id_ed25519
+#
+# After this succeeds once, all VM operations are API-only clones and
+# every controller only needs the Proxmox API token.
+
+templates:
+	@echo "$(GREEN)Bootstrapping Ubuntu 24.04 templates on Proxmox nodes...$(NC)"
+	@echo "$(YELLOW)This is a ONE-TIME step that requires SSH access to Proxmox nodes.$(NC)"
+	@echo "$(YELLOW)Prerequisites: SSH key on root@pve2/pve3/pve4 + loaded in ssh-agent$(NC)"
+	@echo "$(YELLOW)See 'make help' or templates.tf header for setup commands$(NC)"
+	@echo ""
+	@bash -c 'mkdir -p lab/ssh; \
+	[ -f lab/ssh/id_rsa ] || ssh-keygen -t rsa -b 4096 -f lab/ssh/id_rsa -N "" -q; \
+	if [ -z "$$PM_API_TOKEN_ID" ] || [ -z "$$PM_API_TOKEN_SECRET" ]; then \
+		if [ -f ~/.proxmox-env ]; then \
+			source ~/.proxmox-env; \
+		else \
+			echo "$(RED)Error: Proxmox credentials not set$(NC)"; \
+			exit 1; \
+		fi; \
+	fi; \
+	echo "$(YELLOW)Checking ssh-agent (provider requirement)...$(NC)"; \
+	if ! ssh-add -L >/dev/null 2>&1; then \
+		echo "$(RED)Error: no keys in ssh-agent$(NC)"; \
+		echo "$(YELLOW)Run: ssh-add ~/.ssh/id_ed25519 (or your Proxmox-authorized key)$(NC)"; \
+		exit 1; \
+	fi; \
+	cd lab/terraform && \
+	terraform apply \
+		-target=proxmox_virtual_environment_vm.ubuntu_template \
+		-var "proxmox_api_token_id=$$PM_API_TOKEN_ID" \
+		-var "proxmox_api_token_secret=$$PM_API_TOKEN_SECRET" \
+		-var "ssh_public_key=$$(cat ../ssh/id_rsa.pub)" \
+		-auto-approve'
+	@echo "$(GREEN)✓ Templates created on pve2, pve3, pve4 (VM IDs 9000-9002)$(NC)"
+	@echo "$(GREEN)✓ SSH is no longer needed for any lab operation$(NC)"
+	@echo "$(YELLOW)Next: make tf-apply (works from ANY controller with just the API token)$(NC)"
+
 tf-apply:
 	@echo "$(GREEN)Applying Terraform (provisioning VMs and MinIO)...$(NC)"
-	@echo "$(YELLOW)This will create 3 VMs and deploy MinIO (15-20 minutes)$(NC)"
-	@echo "$(YELLOW)First run downloads Ubuntu cloud image (~600MB per node)$(NC)"
+	@echo "$(YELLOW)VMs are API-only clones of the per-node templates (no SSH needed)$(NC)"
+	@echo "$(YELLOW)First run: templates must exist (make templates), downloads ~600MB image per node$(NC)"
 	@bash -c 'read -p "Press Enter to continue..." && true'
-	@bash -c 'if [ -z "$$PM_API_TOKEN_ID" ] || [ -z "$$PM_API_TOKEN_SECRET" ]; then \
+	@bash -c 'mkdir -p lab/ssh; \
+	[ -f lab/ssh/id_rsa ] || ssh-keygen -t rsa -b 4096 -f lab/ssh/id_rsa -N "" -q; \
+	if [ -z "$$PM_API_TOKEN_ID" ] || [ -z "$$PM_API_TOKEN_SECRET" ]; then \
 		if [ -f ~/.proxmox-env ]; then \
 			source ~/.proxmox-env; \
 		else \
@@ -72,7 +127,7 @@ tf-apply:
 	terraform apply \
 		-var "proxmox_api_token_id=$$PM_API_TOKEN_ID" \
 		-var "proxmox_api_token_secret=$$PM_API_TOKEN_SECRET" \
-		-var "ssh_public_key=$$(cat lab/ssh/id_rsa.pub)" \
+		-var "ssh_public_key=$$(cat ../ssh/id_rsa.pub)" \
 		-auto-approve'
 	@echo "$(GREEN)✓ VMs and MinIO provisioned$(NC)"
 	@echo "$(YELLOW)Next: make k3s-install$(NC)"
@@ -139,7 +194,7 @@ tf-destroy:
 		terraform destroy \
 			-var "proxmox_api_token_id=$$PM_API_TOKEN_ID" \
 			-var "proxmox_api_token_secret=$$PM_API_TOKEN_SECRET" \
-			-var "ssh_public_key=$$(cat lab/ssh/id_rsa.pub)" \
+			-var "ssh_public_key=$$(cat ../ssh/id_rsa.pub)" \
 			-auto-approve'; \
 		echo "$(GREEN)✓ Infrastructure destroyed$(NC)"; \
 	else \

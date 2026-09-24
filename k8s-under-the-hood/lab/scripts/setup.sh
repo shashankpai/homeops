@@ -80,9 +80,11 @@ echo ""
 
 # Terraform
 echo -e "${YELLOW}Step 1: Provisioning VMs with Terraform...${NC}"
-echo -e "${YELLOW}(First run downloads the Ubuntu 24.04 cloud image ~600MB to each${NC}"
-echo -e "${YELLOW} target node: pve2/.87, pve3/.25, pve4/.47 — no VMs on pve/.48.${NC}"
-echo -e "${YELLOW} Subsequent runs reuse the cached image.)${NC}"
+echo -e "${YELLOW}NOTE: First run bootstraps Ubuntu templates on each target node${NC}"
+echo -e "${YELLOW} (pve2/.87, pve3/.25, pve4/.47) — this ONE-TIME step requires SSH${NC}"
+echo -e "${YELLOW} access to the Proxmox nodes (key in ssh-agent, authorized as root).${NC}"
+echo -e "${YELLOW} Subsequent runs are API-only (VMs are clones; no SSH needed).${NC}"
+echo -e "${YELLOW}First run also downloads the Ubuntu 24.04 cloud image (~600MB per node).${NC}"
 cd "$TERRAFORM_DIR"
 
 terraform init

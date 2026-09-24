@@ -121,23 +121,59 @@ source ~/.proxmox-env
 > endpoint serves the whole cluster. Terraform's `node_name` setting on each
 > VM decides which node the VM actually lands on.
 
+### 7. One-Time SSH Access to Proxmox Nodes (Template Bootstrap)
+
+The Proxmox API has no endpoint for importing a disk image into a VM — the
+Terraform provider must SSH into the node to do it. To keep day-to-day
+operations SSH-free, the lab uses **per-node templates + API-only clones**:
+
+- **One-time bootstrap** (`make templates` or the first `make setup`) creates an
+  Ubuntu template on each node — this step needs SSH to the nodes
+- **All subsequent operations** (VM creation, destroy, rebuild) are pure API
+  clones — any controller with just the API token can run them
+
+Set up the one-time SSH access:
+
+```bash
+# 1. Authorize your key on each target node
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.47  # pve4
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.87  # pve2
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.25  # pve3
+
+# 2. Load the key into ssh-agent (IMPORTANT: the provider reads the
+#    ssh-agent ONLY — it does not use ~/.ssh/config)
+ssh-add ~/.ssh/id_ed25519
+
+# 3. Verify (should print your key with no password prompt)
+ssh-add -L
+```
+
+> **Why ssh-agent?** The bpg/proxmox provider authorizes node SSH sessions via
+> the agent of the user running Terraform. A key sitting in `~/.ssh/config`
+> is invisible to it.
+
 ---
 
 ## Proxmox Requirements
 
-### Ubuntu Cloud Image (no template needed)
+### Ubuntu Templates (per-node) + API-Only Clones
 
-The lab does **not** clone from a template VM. Instead, Terraform downloads the
-official Ubuntu 24.04 LTS cloud image (qcow2, ~600MB) directly to each target
-node's storage during `make setup`:
+The lab uses one Ubuntu 24.04 template per target node (local-lvm is not
+shared storage, so each node needs its own). The flow:
 
 ```
-https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+One-time bootstrap (SSH to nodes required, run from ONE controller):
+  download Ubuntu 24.04 cloud image (~600MB) to each node (API)
+  → import image as template disk on each node (SSH)
+  → templates exist as VM IDs 9000-9002
+
+Every subsequent operation (API-only, any controller):
+  clone template on the target node → apply cloud-init → boot
 ```
 
-- Downloaded to `local` storage on pve2 (.87), pve3 (.25), and pve4 (.47)
-- VM disks are imported from this image into each node's `local-lvm`
-- First run downloads the image (~600MB per node); subsequent runs reuse it
+- Templates: `ubuntu-2404-pve2` (9000), `ubuntu-2404-pve3` (9001), `ubuntu-2404-pve4` (9002)
+- Lab VMs are full clones of the node-local template
+- Cloning is a first-class Proxmox API operation — **no SSH required**
 - Ubuntu cloud images have cloud-init built in, so SSH keys and static IPs
   are injected automatically on first boot
 
@@ -287,6 +323,36 @@ If not set, source `~/.proxmox-env`:
 source ~/.proxmox-env
 terraform init
 ```
+
+### Template bootstrap SSH authentication fails
+
+**Error**:
+```
+Error: creating custom disk: unable to authenticate user "" over SSH to "192.168.1.47:22".
+Please verify that ssh-agent is correctly loaded with an authorized key via 'ssh-add -L'
+attempted methods [none password], no supported methods remain
+```
+
+**Cause**: The one-time template bootstrap (image-to-disk import) runs on the
+Proxmox node itself, and the provider authenticates via **ssh-agent only**
+(it ignores `~/.ssh/config`).
+
+**Solution**:
+```bash
+# 1. Authorize your key on each target node
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.47
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.87
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.25
+
+# 2. Load it in the agent
+ssh-add ~/.ssh/id_ed25519
+
+# 3. Verify the agent sees it
+ssh-add -L
+```
+
+This is needed **only for the bootstrap** (`make templates`). Once templates
+exist, VM operations are API-only clones and need no SSH.
 
 ### Ubuntu cloud image download fails
 

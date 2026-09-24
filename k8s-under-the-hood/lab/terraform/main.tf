@@ -3,8 +3,9 @@
 # ==============================================================================
 # local-lvm is per-node storage (not shared), so we download the official
 # Ubuntu 24.04 cloud image to each node that will host a lab VM.
-# This avoids any dependency on a template VM and works across nodes.
-# Pattern proven in ../../terraform-talos/01-Infrastructure/main.tf
+# The downloaded image is used ONLY to build the per-node templates
+# (see templates.tf). Lab VMs below are API-only clones of those templates,
+# so day-to-day operations never need SSH access to Proxmox nodes.
 
 resource "proxmox_download_file" "ubuntu_cloud_image" {
   for_each = toset(var.target_nodes)
@@ -30,6 +31,12 @@ resource "proxmox_virtual_environment_vm" "master" {
   tags        = concat(var.tags, ["master"])
   on_boot     = true
 
+  # API-only clone from the node-local template (no SSH required)
+  clone {
+    vm_id = proxmox_virtual_environment_vm.ubuntu_template[var.vm_nodes["master"]].vm_id
+    full  = true
+  }
+
   cpu {
     cores = var.master_config.cores
     type  = "x86-64-v2-AES"
@@ -41,8 +48,6 @@ resource "proxmox_virtual_environment_vm" "master" {
 
   disk {
     datastore_id = "local-lvm"
-    file_id      = proxmox_download_file.ubuntu_cloud_image[var.vm_nodes["master"]].id
-    file_format  = "raw"
     interface    = "scsi0"
     size         = var.master_config.disk
   }
@@ -72,10 +77,6 @@ resource "proxmox_virtual_environment_vm" "master" {
     }
   }
 
-  operating_system {
-    type = "l26"
-  }
-
   lifecycle {
     ignore_changes = [
       initialization
@@ -96,6 +97,12 @@ resource "proxmox_virtual_environment_vm" "worker1" {
   tags        = concat(var.tags, ["worker"])
   on_boot     = true
 
+  # API-only clone from the node-local template (no SSH required)
+  clone {
+    vm_id = proxmox_virtual_environment_vm.ubuntu_template[var.vm_nodes["worker1"]].vm_id
+    full  = true
+  }
+
   cpu {
     cores = var.worker_config.cores
     type  = "x86-64-v2-AES"
@@ -107,8 +114,6 @@ resource "proxmox_virtual_environment_vm" "worker1" {
 
   disk {
     datastore_id = "local-lvm"
-    file_id      = proxmox_download_file.ubuntu_cloud_image[var.vm_nodes["worker1"]].id
-    file_format  = "raw"
     interface    = "scsi0"
     size         = var.worker_config.disk
   }
@@ -138,10 +143,6 @@ resource "proxmox_virtual_environment_vm" "worker1" {
     }
   }
 
-  operating_system {
-    type = "l26"
-  }
-
   lifecycle {
     ignore_changes = [
       initialization
@@ -162,6 +163,12 @@ resource "proxmox_virtual_environment_vm" "worker2" {
   tags        = concat(var.tags, ["worker"])
   on_boot     = true
 
+  # API-only clone from the node-local template (no SSH required)
+  clone {
+    vm_id = proxmox_virtual_environment_vm.ubuntu_template[var.vm_nodes["worker2"]].vm_id
+    full  = true
+  }
+
   cpu {
     cores = var.worker_config.cores
     type  = "x86-64-v2-AES"
@@ -173,8 +180,6 @@ resource "proxmox_virtual_environment_vm" "worker2" {
 
   disk {
     datastore_id = "local-lvm"
-    file_id      = proxmox_download_file.ubuntu_cloud_image[var.vm_nodes["worker2"]].id
-    file_format  = "raw"
     interface    = "scsi0"
     size         = var.worker_config.disk
   }
@@ -202,10 +207,6 @@ resource "proxmox_virtual_environment_vm" "worker2" {
       username = "ubuntu"
       keys     = [var.ssh_public_key]
     }
-  }
-
-  operating_system {
-    type = "l26"
   }
 
   lifecycle {

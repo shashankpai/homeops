@@ -87,7 +87,24 @@ Before running `make setup`, ensure you have:
 - [ ] **Proxmox API token** — Created on Proxmox cluster
 - [ ] **Environment variables set** — `$PM_API_TOKEN_ID` and `$PM_API_TOKEN_SECRET`
 
-See **docs/prerequisites.md** for detailed setup.
+### One-Time Only: SSH Access for Template Bootstrap
+
+The **first** `make setup` (or `make templates`) bootstraps Ubuntu templates on each Proxmox node. This one-time step requires SSH access to the Proxmox nodes (the image-to-disk import runs on the node itself — there is no Proxmox API for it):
+
+```bash
+# 1. Authorize your key on each node (run once per node)
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.47  # pve4
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.87  # pve2
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.25  # pve3
+
+# 2. Load the key in ssh-agent (the provider reads the agent,
+#    it does NOT use ~/.ssh/config)
+ssh-add ~/.ssh/id_ed25519
+```
+
+After this one-time bootstrap, **all lab operations are API-only clones** — every controller (current and future) only needs the Proxmox API token. No SSH keys on Proxmox hosts required for day-to-day use.
+
+See `docs/prerequisites.md` for detailed setup.
 
 ---
 
@@ -95,9 +112,10 @@ See **docs/prerequisites.md** for detailed setup.
 
 | Component | Details |
 |-----------|---------|
-| **Master VM** | 192.168.1.81 (2 vCPU, 6GB RAM) on pve4 |
-| **Worker 1 VM** | 192.168.1.82 (2 vCPU, 4GB RAM) on pve2 |
-| **Worker 2 VM** | 192.168.1.83 (2 vCPU, 4GB RAM) on pve3 |
+| **Ubuntu templates** | One per node (VM IDs 9000-9002), created once via `make templates` |
+| **Master VM** | 192.168.1.81 (2 vCPU, 6GB RAM) on pve4 — API-only clone |
+| **Worker 1 VM** | 192.168.1.82 (2 vCPU, 4GB RAM) on pve2 — API-only clone |
+| **Worker 2 VM** | 192.168.1.83 (2 vCPU, 4GB RAM) on pve3 — API-only clone |
 | **MinIO** | 192.168.1.90 (Docker container on master) |
 | **K3s** | v1.36.3+k3s1 |
 | **Prometheus** | Metrics collection |
@@ -114,20 +132,31 @@ If you want to deploy components separately:
 # 1. Initialize Terraform
 make tf-init
 
-# 2. Provision VMs and MinIO
+# 2. One-time template bootstrap (requires SSH to Proxmox nodes)
+make templates
+
+# 3. Provision VMs and MinIO (API-only clones)
 make tf-apply
 
-# 3. Install K3s
+# 4. Install K3s
 make k3s-install
 
-# 4. Deploy observability stack
+# 5. Deploy observability stack
 make observability-deploy
 
-# 5. Verify
+# 6. Verify
 make verify
 ```
 
 See **Makefile** for all available targets.
+
+---
+
+## Multi-Controller Notes
+
+- **Template bootstrap** (`make templates`) requires SSH to Proxmox nodes — run it **once**, from **any single controller**
+- **Everything after** (VM clones, destroy, rebuild) is API-only and works from **any controller** with just the Proxmox API token in `~/.proxmox-env`
+- **Terraform state** lives on the controller that ran the initial setup (`lab/terraform/terraform.tfstate`, git-ignored). To operate from another controller, either copy the state file or configure the MinIO backend (see `MULTI_CONTROLLER_MINIO_SETUP.md` after first bootstrap)
 
 ---
 

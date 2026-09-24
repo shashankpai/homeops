@@ -125,12 +125,6 @@ variable "ssh_public_key" {
   type        = string
 }
 
-variable "ssh_private_key_path" {
-  description = "Path to SSH private key for provisioning"
-  type        = string
-  default     = "lab/ssh/id_rsa"
-}
-
 variable "tags" {
   description = "Tags for VMs"
   type        = list(string)
@@ -140,33 +134,33 @@ variable "tags" {
 variable "minio_config" {
   description = "MinIO LXC container configuration (Terraform state backend)"
   type = object({
-    vm_id              = number
-    hostname           = string
-    ip                 = string
-    cores              = number
-    memory             = number
-    swap               = number
-    disk               = number
-    data_volume_size   = number
-    api_port           = number
-    console_port       = number
-    root_user          = string
-    root_password      = string
-    bucket_name        = string
+    vm_id            = number
+    hostname         = string
+    ip               = string
+    cores            = number
+    memory           = number
+    swap             = number
+    disk             = number
+    data_volume_size = number
+    api_port         = number
+    console_port     = number
+    root_user        = string
+    root_password    = string
+    bucket_name      = string
   })
   default = {
-    vm_id              = 1200
-    hostname           = "minio"
-    ip                 = "192.168.1.90"
-    cores              = 2
-    memory             = 2048
-    swap               = 512
-    disk               = 10
-    data_volume_size   = 20
-    api_port           = 9000
-    console_port       = 9001
-    root_user          = "minioadmin"
-    root_password      = "minioadmin123"
-    bucket_name        = "terraform-state"
+    vm_id            = 1200
+    hostname         = "minio"
+    ip               = "192.168.1.90"
+    cores            = 2
+    memory           = 2048
+    swap             = 512
+    disk             = 10
+    data_volume_size = 20
+    api_port         = 9000
+    console_port     = 9001
+    root_user        = "minioadmin"
+    root_password    = "minioadmin123"
+    bucket_name      = "terraform-state"
   }
 }
