@@ -31,6 +31,8 @@ resource "null_resource" "minio_docker_setup" {
 
       # Start MinIO container (sudo: docker group membership from usermod
       # above does not apply to the current SSH session)
+      # MinIO removed their images from Docker Hub/Quay (source-only since
+      # late 2025, repo archived April 2026). Community-maintained build:
       "sudo docker run -d \\",
       "  --name minio \\",
       "  --restart always \\",
@@ -39,7 +41,7 @@ resource "null_resource" "minio_docker_setup" {
       "  -e MINIO_ROOT_USER=${var.minio_config.root_user} \\",
       "  -e MINIO_ROOT_PASSWORD=${var.minio_config.root_password} \\",
       "  -v /minio/data:/data \\",
-      "  minio/minio:latest \\",
+      "  coollabsio/minio:latest \\",
       "  minio server /data --console-address ':9001'",
 
       "echo '=== MinIO started ==='",

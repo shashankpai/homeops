@@ -68,7 +68,7 @@ kubectl get nodes
 | **How do I access Kubernetes?** | `export KUBECONFIG=~/.kube/config-k8suth && kubectl get nodes` |
 | **How do I access Prometheus?** | `kubectl port-forward -n monitoring svc/prometheus 9090:9090` |
 | **How do I access Grafana?** | `kubectl port-forward -n monitoring svc/grafana 3000:3000` (admin/admin) |
-| **How do I access MinIO?** | `http://192.168.1.90:9001` (minioadmin/minioadmin123) |
+| **How do I access MinIO?** | `http://192.168.1.81:9001` (minioadmin/minioadmin123) |
 | **How do I run Episode 1?** | `make demo-ep01` |
 | **How do I clean up Episode 1?** | `make cleanup-ep01` |
 | **How do I destroy the lab?** | `make teardown` |
@@ -93,13 +93,13 @@ The **first** `make setup` (or `make templates`) bootstraps Ubuntu templates on 
 
 ```bash
 # 1. Authorize your key on each node (run once per node)
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.47  # pve4
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.87  # pve2
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.25  # pve3
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.47  # pve4
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.87  # pve2
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.25  # pve3
 
 # 2. Load the key in ssh-agent (the provider reads the agent,
 #    it does NOT use ~/.ssh/config)
-ssh-add ~/.ssh/id_ed25519
+ssh-add lab/ssh/id_rsa
 ```
 
 After this one-time bootstrap, **all lab operations are API-only clones** — every controller (current and future) only needs the Proxmox API token. No SSH keys on Proxmox hosts required for day-to-day use.
@@ -112,11 +112,11 @@ See `docs/prerequisites.md` for detailed setup.
 
 | Component | Details |
 |-----------|---------|
-| **Ubuntu templates** | One per node (VM IDs 9000-9002), created once via `make templates` |
+| **Ubuntu templates** | One per node (VM IDs 9100-9102), created once via `make templates` |
 | **Master VM** | 192.168.1.81 (2 vCPU, 6GB RAM) on pve4 — API-only clone |
 | **Worker 1 VM** | 192.168.1.82 (2 vCPU, 4GB RAM) on pve2 — API-only clone |
 | **Worker 2 VM** | 192.168.1.83 (2 vCPU, 4GB RAM) on pve3 — API-only clone |
-| **MinIO** | 192.168.1.90 (Docker container on master) |
+| **MinIO** | 192.168.1.81 (Docker container on master) |
 | **K3s** | v1.36.3+k3s1 |
 | **Prometheus** | Metrics collection |
 | **Grafana** | Visualization (admin/admin) |
@@ -188,7 +188,7 @@ kubectl port-forward -n monitoring svc/grafana 3000:3000
 ### Access MinIO Console
 
 ```bash
-# Open http://192.168.1.90:9001
+# Open http://192.168.1.81:9001
 # Login: minioadmin / minioadmin123
 ```
 

@@ -151,7 +151,9 @@ variable "minio_config" {
   default = {
     vm_id            = 1200
     hostname         = "minio"
-    ip               = "192.168.1.90"
+    # MinIO runs as a Docker container ON the master VM (192.168.1.81),
+    # not as a separate LXC — this IP must match vm_ips["master"].
+    ip               = "192.168.1.81"
     cores            = 2
     memory           = 2048
     swap             = 512

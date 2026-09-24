@@ -10,6 +10,8 @@ build/cloud-config.yaml
 *.pem
 *.id_rsa
 id_rsa*
+lab/terraform/terraform.tfstate.backup
+lab/terraform/terraform.tfstate.*.backup
 
 # Episode narration files (kept private, not pushed to GitHub)
 episodes/**/narration.md

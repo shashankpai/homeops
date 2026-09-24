@@ -62,6 +62,9 @@ resource "proxmox_virtual_environment_vm" "master" {
 
   initialization {
     datastore_id = "local-lvm"
+    # Installs qemu-guest-agent on first boot so the provider's agent-based
+    # IP wait succeeds in seconds instead of timing out after 15 minutes.
+    user_data_file_id = proxmox_virtual_environment_file.cloud_config[var.vm_nodes["master"]].id
     ip_config {
       ipv4 {
         address = "${var.vm_ips["master"]}/24"
@@ -128,6 +131,7 @@ resource "proxmox_virtual_environment_vm" "worker1" {
 
   initialization {
     datastore_id = "local-lvm"
+    user_data_file_id = proxmox_virtual_environment_file.cloud_config[var.vm_nodes["worker1"]].id
     ip_config {
       ipv4 {
         address = "${var.vm_ips["worker1"]}/24"
@@ -194,6 +198,7 @@ resource "proxmox_virtual_environment_vm" "worker2" {
 
   initialization {
     datastore_id = "local-lvm"
+    user_data_file_id = proxmox_virtual_environment_file.cloud_config[var.vm_nodes["worker2"]].id
     ip_config {
       ipv4 {
         address = "${var.vm_ips["worker2"]}/24"

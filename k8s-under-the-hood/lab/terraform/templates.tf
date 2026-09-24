@@ -20,7 +20,9 @@
 resource "proxmox_virtual_environment_vm" "ubuntu_template" {
   for_each = toset(var.target_nodes)
 
-  vm_id       = 9000 + index(var.target_nodes, each.value)
+  # Static map: VM IDs are cluster-wide unique in Proxmox. 9000/9002 are
+  # already taken by other VMs (ubuntu-22.04 template, opnsense on node pve).
+  vm_id       = { pve2 = 9100, pve3 = 9101, pve4 = 9102 }[each.value]
   name        = "ubuntu-2404-${each.value}"
   description = "Ubuntu 24.04 cloud image template - k8s-under-the-hood lab (source for API-only clones)"
   node_name   = each.value

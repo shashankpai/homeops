@@ -153,7 +153,7 @@ docker run -d \
   -e MINIO_ROOT_USER=minioadmin \
   -e MINIO_ROOT_PASSWORD=minioadmin123 \
   -v /minio/data:/data \
-  minio/minio:latest \
+  coollabsio/minio:latest \
   minio server /data --console-address ":9001"
 
 # Verify MinIO is running
@@ -184,7 +184,7 @@ docker run -d \
   -e MINIO_ROOT_USER=minioadmin \
   -e MINIO_ROOT_PASSWORD=minioadmin123 \
   -v ~/minio/data:/data \
-  minio/minio:latest \
+  coollabsio/minio:latest \
   minio server /data --console-address ":9001"
 
 # Verify MinIO is running
@@ -199,8 +199,12 @@ curl http://localhost:9000/minio/health/live
 ssh root@192.168.1.48  # or your Linux server
 
 # Install MinIO client (mc)
-curl https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
-chmod +x /usr/local/bin/mc
+# NOTE: MinIO removed prebuilt binaries from dl.min.io (410 Gone since late
+# 2025, source-only distribution). Use the AWS CLI instead — the S3 API is
+# fully compatible:
+aws --endpoint-url http://192.168.1.81:9000 s3 ls
+aws --endpoint-url http://192.168.1.81:9000 s3api head-bucket --bucket terraform-state
+# (set AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin123)
 
 # Configure MinIO alias
 mc alias set minio http://localhost:9000 minioadmin minioadmin123
@@ -478,7 +482,7 @@ docker run -d \
   -e MINIO_ROOT_USER=minioadmin \
   -e MINIO_ROOT_PASSWORD=minioadmin123 \
   -v /minio/data:/data \
-  minio/minio:latest \
+  coollabsio/minio:latest \
   minio server /data --console-address ":9001"
 ```
 
@@ -644,7 +648,7 @@ docker run -d \
   -e MINIO_ROOT_USER=minioadmin \
   -e MINIO_ROOT_PASSWORD=minioadmin123 \
   -v /minio/data:/data \
-  minio/minio:latest \
+  coollabsio/minio:latest \
   minio server /data --console-address ":9001"
 
 # Wait for MinIO to start

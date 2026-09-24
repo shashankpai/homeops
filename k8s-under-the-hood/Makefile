@@ -64,13 +64,13 @@ tf-init:
 # (root@pve2, pve3, pve4). The image-to-disk import runs on each node.
 #
 # Prerequisites (on the controller running this):
-#   1. SSH key authorized on Proxmox nodes:
-#      ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.47
-#      ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.87
-#      ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.25
+#   1. Lab SSH key authorized on Proxmox nodes:
+#      ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.47
+#      ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.87
+#      ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.25
 #   2. Key loaded in ssh-agent (the provider reads the agent,
 #      NOT ~/.ssh/config):
-#      ssh-add ~/.ssh/id_ed25519
+#      ssh-add lab/ssh/id_rsa
 #
 # After this succeeds once, all VM operations are API-only clones and
 # every controller only needs the Proxmox API token.
@@ -104,7 +104,7 @@ templates:
 		-var "proxmox_api_token_secret=$$PM_API_TOKEN_SECRET" \
 		-var "ssh_public_key=$$(cat ../ssh/id_rsa.pub)" \
 		-auto-approve'
-	@echo "$(GREEN)✓ Templates created on pve2, pve3, pve4 (VM IDs 9000-9002)$(NC)"
+	@echo "$(GREEN)✓ Templates created on pve2, pve3, pve4 (VM IDs 9100-9102)$(NC)"
 	@echo "$(GREEN)✓ SSH is no longer needed for any lab operation$(NC)"
 	@echo "$(YELLOW)Next: make tf-apply (works from ANY controller with just the API token)$(NC)"
 
@@ -167,8 +167,8 @@ verify:
 minio-status:
 	@echo "$(GREEN)MinIO Status$(NC)"
 	@bash -c 'cd lab/terraform && \
-	ENDPOINT=$$(terraform output -raw minio_endpoint 2>/dev/null || echo "http://192.168.1.90:9000"); \
-	CONSOLE=$$(terraform output -raw minio_console_url 2>/dev/null || echo "http://192.168.1.90:9001"); \
+	ENDPOINT=$$(terraform output -raw minio_endpoint 2>/dev/null || echo "http://192.168.1.81:9000"); \
+	CONSOLE=$$(terraform output -raw minio_console_url 2>/dev/null || echo "http://192.168.1.81:9001"); \
 	echo "API Endpoint: $$ENDPOINT"; \
 	echo "Console URL: $$CONSOLE"; \
 	echo "Credentials: minioadmin / minioadmin123"; \

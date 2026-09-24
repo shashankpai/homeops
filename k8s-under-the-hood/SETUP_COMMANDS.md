@@ -71,7 +71,7 @@ source ~/.proxmox-env
 
 ### How to Create a Proxmox API Token
 
-If you don't have a token yet:
+If you don't h RRave a token yet:
 
 1. SSH to your Proxmox host:
    ```bash
@@ -107,7 +107,7 @@ This single command will:
 1. **Check prerequisites** — Verify terraform, ansible, kubectl, jq are installed
 2. **Generate SSH keys** — If not already present in `lab/ssh/`
 3. **Verify Proxmox credentials** — Check API token is valid
-4. **Run Terraform** — Provision 3 VMs on Proxmox
+4. **Run Terraform** — Provision 3 VMs on Proxmox (VMs are full clones of the per-node templates created by the one-time `make templates` bootstrap)
 5. **Wait for VMs** — Allow 2-3 minutes for VMs to boot
 6. **Verify SSH connectivity** — Ensure all VMs are reachable
 7. **Run Ansible** — Install K3s on all VMs
@@ -244,7 +244,7 @@ Next steps:
 
 **Total resources**: 6 vCPU, 14GB RAM, 90GB disk (across 3 physical hosts — no VMs on pve/.48)
 
-**VM image**: Official Ubuntu 24.04 LTS cloud image, downloaded directly to each target node by Terraform (no template VM dependency)
+**VM image**: Official Ubuntu 24.04 LTS cloud image. A ONE-TIME `make templates` bootstrap builds per-node template VMs (IDs 9100-9102) from the cloud image; lab VMs are then API-only full clones — no SSH to Proxmox nodes needed for day-to-day operations. Prerequisite for the bootstrap: the lab SSH key (`lab/ssh/id_rsa.pub`) authorized as `root` on pve2/pve3/pve4 and loaded in ssh-agent.
 
 ### Kubernetes Cluster
 
@@ -516,27 +516,34 @@ source ~/.proxmox-env
 export PM_API_TOKEN_ID="root@pam!k8s-under-the-hood"
 export PM_API_TOKEN_SECRET="your-token-secret"
 
-# 3. Run setup (15-20 minutes)
+# 3. ONE-TIME: bootstrap Ubuntu templates on pve2/pve3/pve4 (needs SSH to nodes)
+#    ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.47  # pve4
+#    ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.87  # pve2
+#    ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.25  # pve3
+#    ssh-add lab/ssh/id_rsa
+make templates
+
+# 4. Run setup (15-20 minutes)
 make setup
 
-# 4. Verify everything (5 minutes)
+# 5. Verify everything (5 minutes)
 make verify
 
-# 5. Set kubeconfig
+# 6. Set kubeconfig
 export KUBECONFIG=~/.kube/config-k8suth
 
-# 6. Check cluster
+# 7. Check cluster
 kubectl get nodes
 
-# 7. Access Prometheus
+# 8. Access Prometheus
 kubectl port-forward -n monitoring svc/prometheus 9090:9090
 # Open http://localhost:9090
 
-# 8. Access Grafana
+# 9. Access Grafana
 kubectl port-forward -n monitoring svc/grafana 3000:3000
 # Open http://localhost:3000 (admin/admin)
 
-# 9. Run Episode 1 (Phase 2)
+# 10. Run Episode 1 (Phase 2)
 make demo-ep01
 ```
 

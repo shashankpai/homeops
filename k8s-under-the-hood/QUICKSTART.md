@@ -49,12 +49,12 @@ The **first** setup bootstraps Ubuntu templates on each Proxmox node. This one-t
 
 ```bash
 # Authorize your key on each node
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.47  # pve4
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.87  # pve2
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.25  # pve3
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.47  # pve4
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.87  # pve2
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.25  # pve3
 
 # Load key in ssh-agent (provider reads agent, NOT ~/.ssh/config)
-ssh-add ~/.ssh/id_ed25519
+ssh-add lab/ssh/id_rsa
 ```
 
 ### 4. Verify Prerequisites
@@ -102,11 +102,11 @@ make verify
 
 ### MinIO State Backend
 
-MinIO is automatically deployed as an LXC container on the master node:
+MinIO is automatically deployed as a Docker container on the master VM:
 
 ```
-MinIO API:     http://192.168.1.90:9000
-MinIO Console: http://192.168.1.90:9001
+MinIO API:     http://192.168.1.81:9000
+MinIO Console: http://192.168.1.81:9001
 Credentials:   minioadmin / minioadmin123
 ```
 
@@ -130,7 +130,7 @@ kubectl port-forward -n monitoring svc/grafana 3000:3000
 # Open http://localhost:3000 (admin/admin)
 
 # Access MinIO Console
-# Open http://192.168.1.90:9001 (minioadmin/minioadmin123)
+# Open http://192.168.1.81:9001 (minioadmin/minioadmin123)
 ```
 
 ---

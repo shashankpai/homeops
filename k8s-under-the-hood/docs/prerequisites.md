@@ -136,13 +136,13 @@ Set up the one-time SSH access:
 
 ```bash
 # 1. Authorize your key on each target node
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.47  # pve4
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.87  # pve2
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.25  # pve3
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.47  # pve4
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.87  # pve2
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.25  # pve3
 
 # 2. Load the key into ssh-agent (IMPORTANT: the provider reads the
 #    ssh-agent ONLY — it does not use ~/.ssh/config)
-ssh-add ~/.ssh/id_ed25519
+ssh-add lab/ssh/id_rsa
 
 # 3. Verify (should print your key with no password prompt)
 ssh-add -L
@@ -165,13 +165,13 @@ shared storage, so each node needs its own). The flow:
 One-time bootstrap (SSH to nodes required, run from ONE controller):
   download Ubuntu 24.04 cloud image (~600MB) to each node (API)
   → import image as template disk on each node (SSH)
-  → templates exist as VM IDs 9000-9002
+  → templates exist as VM IDs 9100-9102
 
 Every subsequent operation (API-only, any controller):
   clone template on the target node → apply cloud-init → boot
 ```
 
-- Templates: `ubuntu-2404-pve2` (9000), `ubuntu-2404-pve3` (9001), `ubuntu-2404-pve4` (9002)
+- Templates: `ubuntu-2404-pve2` (9100), `ubuntu-2404-pve3` (9101), `ubuntu-2404-pve4` (9102)
 - Lab VMs are full clones of the node-local template
 - Cloning is a first-class Proxmox API operation — **no SSH required**
 - Ubuntu cloud images have cloud-init built in, so SSH keys and static IPs
@@ -340,12 +340,12 @@ Proxmox node itself, and the provider authenticates via **ssh-agent only**
 **Solution**:
 ```bash
 # 1. Authorize your key on each target node
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.47
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.87
-ssh-copy-id -i ~/.ssh/id_ed25519.pub root@192.168.1.25
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.47
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.87
+ssh-copy-id -i lab/ssh/id_rsa.pub root@192.168.1.25
 
 # 2. Load it in the agent
-ssh-add ~/.ssh/id_ed25519
+ssh-add lab/ssh/id_rsa
 
 # 3. Verify the agent sees it
 ssh-add -L

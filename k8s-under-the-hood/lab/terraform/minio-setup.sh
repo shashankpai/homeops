@@ -3,6 +3,10 @@ set -e
 
 # MinIO bucket setup script
 # Creates bucket and enables versioning
+#
+# NOTE: uses the AWS CLI instead of the MinIO client (mc) because MinIO
+# removed prebuilt binaries (dl.min.io returns 410 Gone, source-only
+# distribution since late 2025). The S3 API is fully compatible.
 
 MINIO_ENDPOINT="${minio_endpoint}"
 MINIO_USER="${minio_root_user}"
@@ -21,28 +25,24 @@ for i in {1..30}; do
   sleep 2
 done
 
-# Install MinIO client if not present
-if ! command -v mc &> /dev/null; then
-  echo "Installing MinIO client..."
-  curl https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
-  chmod +x /usr/local/bin/mc
-fi
+export AWS_ACCESS_KEY_ID="$MINIO_USER"
+export AWS_SECRET_ACCESS_KEY="$MINIO_PASSWORD"
+export AWS_DEFAULT_REGION="us-east-1"
 
-# Configure MinIO alias
-mc alias set minio "$MINIO_ENDPOINT" "$MINIO_USER" "$MINIO_PASSWORD" --api S3v4
-
-# Create bucket
-if ! mc ls minio/$BUCKET_NAME > /dev/null 2>&1; then
+# Create bucket if it doesn't exist
+if ! aws --endpoint-url "$MINIO_ENDPOINT" s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
   echo "Creating bucket: $BUCKET_NAME"
-  mc mb minio/$BUCKET_NAME
+  aws --endpoint-url "$MINIO_ENDPOINT" s3 mb "s3://$BUCKET_NAME"
 else
   echo "Bucket already exists: $BUCKET_NAME"
 fi
 
 # Enable versioning
 echo "Enabling versioning on bucket"
-mc version enable minio/$BUCKET_NAME
+aws --endpoint-url "$MINIO_ENDPOINT" s3api put-bucket-versioning \
+  --bucket "$BUCKET_NAME" \
+  --versioning-configuration Status=Enabled
 
 # Verify
 echo "=== MinIO bucket setup complete ==="
-mc ls minio/
+aws --endpoint-url "$MINIO_ENDPOINT" s3 ls

@@ -3,6 +3,7 @@ lab/terraform/.terraform/
 lab/terraform/.terraform.lock.hcl
 lab/terraform/terraform.tfstate
 lab/terraform/terraform.tfstate.backup
+lab/terraform/terraform.tfstate.*.backup
 lab/terraform/terraform.tfvars
 lab/terraform/.tfvars
 
