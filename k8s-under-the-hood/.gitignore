@@ -1,0 +1,38 @@
+# Terraform
+lab/terraform/.terraform/
+lab/terraform/.terraform.lock.hcl
+lab/terraform/terraform.tfstate
+lab/terraform/terraform.tfstate.backup
+lab/terraform/terraform.tfvars
+lab/terraform/.tfvars
+
+# Ansible
+lab/ansible/inventory.ini
+lab/ansible/.ansible/
+
+# SSH keys
+lab/ssh/id_rsa
+lab/ssh/id_rsa.pub
+
+# kubeconfig
+.kube/
+~/.kube/config-k8suth
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+~/.proxmox-env

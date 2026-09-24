@@ -1,0 +1,5 @@
+---
+# Ansible collections required for this playbook
+collections:
+  - name: ansible.posix
+    version: ">=1.3.0"

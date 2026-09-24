@@ -1,0 +1,208 @@
+---
+- name: Prepare all nodes
+  hosts: k3s_cluster
+  become: yes
+  gather_facts: yes
+  vars:
+    k3s_version: "v1.36.3+k3s1"
+    k3s_token: "k8s-under-the-hood-token-{{ ansible_date_time.iso8601_basic_short }}"
+  tasks:
+    - name: Wait for system to be ready
+      wait_for_connection:
+        timeout: 300
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - wget
+          - apt-transport-https
+          - ca-certificates
+          - software-properties-common
+          - jq
+          - linux-tools-common
+          - cgroup-tools
+        state: present
+
+    - name: Disable swap
+      shell: swapoff -a
+      ignore_errors: yes
+
+    - name: Remove swap from fstab
+      lineinfile:
+        path: /etc/fstab
+        regexp: '.*swap.*'
+        state: absent
+
+    - name: Set hostname
+      hostname:
+        name: "{{ inventory_hostname_short }}"
+
+    - name: Enable cgroup v2 (if needed)
+      shell: |
+        if ! grep -q "systemd.unified_cgroup_hierarchy=1" /etc/default/grub; then
+          sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="systemd.unified_cgroup_hierarchy=1 /' /etc/default/grub
+          update-grub
+        fi
+      ignore_errors: yes
+
+- name: Setup K3s Master
+  hosts: master
+  become: yes
+  vars:
+    k3s_version: "v1.36.3+k3s1"
+    k3s_token: "k8s-under-the-hood-token"
+  tasks:
+    - name: Download K3s installation script
+      get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: '0755'
+
+    - name: Install K3s master
+      shell: |
+        INSTALL_K3S_VERSION={{ k3s_version }} \
+        INSTALL_K3S_EXEC="--token={{ k3s_token }} --write-kubeconfig-mode=644 --disable=traefik" \
+        sh /tmp/k3s-install.sh
+      args:
+        creates: /usr/local/bin/k3s
+
+    - name: Wait for K3s to be ready
+      wait_for:
+        port: 6443
+        host: "{{ ansible_default_ipv4.address }}"
+        delay: 15
+        timeout: 300
+
+    - name: Create .kube directory for ubuntu user
+      file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy kubeconfig to ubuntu user
+      copy:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: /home/ubuntu/.kube/config
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+        remote_src: yes
+
+    - name: Update kubeconfig server address
+      replace:
+        path: /home/ubuntu/.kube/config
+        regexp: 'https://127.0.0.1:6443'
+        replace: 'https://{{ ansible_default_ipv4.address }}:6443'
+
+    - name: Get node token
+      slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: node_token
+
+    - name: Save node token as fact
+      set_fact:
+        k3s_node_token: "{{ node_token.content | b64decode | trim }}"
+
+- name: Setup K3s Workers
+  hosts: workers
+  become: yes
+  vars:
+    k3s_version: "v1.36.3+k3s1"
+  tasks:
+    - name: Download K3s installation script
+      get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: '0755'
+
+    - name: Install K3s worker
+      shell: |
+        INSTALL_K3S_VERSION={{ k3s_version }} \
+        K3S_URL=https://{{ hostvars[groups['master'][0]]['ansible_default_ipv4']['address'] }}:6443 \
+        K3S_TOKEN={{ hostvars[groups['master'][0]]['k3s_node_token'] }} \
+        sh /tmp/k3s-install.sh
+      args:
+        creates: /usr/local/bin/k3s
+
+- name: Post-installation tasks
+  hosts: master
+  become: no
+  tasks:
+    - name: Set correct permissions on kubeconfig
+      become: yes
+      file:
+        path: /etc/rancher/k3s/k3s.yaml
+        mode: '0644'
+
+    - name: Install kubectl bash completion
+      become: yes
+      shell: kubectl completion bash > /etc/bash_completion.d/kubectl
+      ignore_errors: yes
+
+    - name: Add kubectl alias to bashrc
+      lineinfile:
+        path: /home/ubuntu/.bashrc
+        line: "alias k=kubectl"
+        create: yes
+
+    - name: Add kubectl completion to bashrc
+      lineinfile:
+        path: /home/ubuntu/.bashrc
+        line: "source <(kubectl completion bash)"
+        create: yes
+
+    - name: Set KUBECONFIG environment variable
+      lineinfile:
+        path: /home/ubuntu/.bashrc
+        line: "export KUBECONFIG=/home/ubuntu/.kube/config"
+        create: yes
+
+    - name: Wait for all nodes to be ready
+      shell: KUBECONFIG=/home/ubuntu/.kube/config kubectl get nodes --no-headers | grep -v Ready | wc -l
+      register: not_ready_nodes
+      until: not_ready_nodes.stdout == "0"
+      retries: 30
+      delay: 10
+
+    - name: Get cluster info
+      shell: KUBECONFIG=/home/ubuntu/.kube/config kubectl get nodes -o wide
+      register: cluster_nodes
+
+    - name: Display cluster status
+      debug:
+        msg: |
+          K3s cluster is ready!
+
+          Cluster nodes:
+          {{ cluster_nodes.stdout }}
+
+          To access your cluster from your local machine:
+          scp -i lab/ssh/id_rsa ubuntu@{{ ansible_default_ipv4.address }}:~/.kube/config ~/.kube/config-k8suth
+          sed -i 's/127.0.0.1/{{ ansible_default_ipv4.address }}/g' ~/.kube/config-k8suth
+
+- name: Verify cluster health
+  hosts: master
+  become: no
+  tasks:
+    - name: Check K3s service status
+      become: yes
+      systemd:
+        name: k3s
+        state: started
+        enabled: yes
+
+    - name: Verify all nodes are ready
+      shell: KUBECONFIG=/home/ubuntu/.kube/config kubectl get nodes
+      register: nodes_status
+
+    - name: Show final cluster status
+      debug:
+        var: nodes_status.stdout_lines
