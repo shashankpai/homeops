@@ -266,6 +266,10 @@ Next steps:
 | node-exporter | Host metrics | DaemonSet on all nodes |
 | kube-state-metrics | K8s object metrics | Deployment |
 
+**Setup steps, scrape-job architecture, and the full troubleshooting log**
+(RBAC for service discovery, kubelet 404/401 errors, Makefile error
+masking, verify.sh bugs) are documented in **`docs/observability.md`**.
+
 ### Kubernetes System Pods
 
 | Pod | Namespace | Purpose |

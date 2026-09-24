@@ -192,6 +192,8 @@ kubectl port-forward -n monitoring svc/grafana 3000:3000
 # Login: minioadmin / minioadmin123
 ```
 
+> Observability stack setup steps and troubleshooting: see `docs/observability.md`
+
 ### Check MinIO Status
 
 ```bash
@@ -262,6 +264,7 @@ GETTING_STARTED.md (this file)
   ├─ QUICKSTART.md (main guide)
   ├─ docs/prerequisites.md (tool setup)
   ├─ docs/architecture.md (design details)
+  ├─ docs/observability.md (observability setup + troubleshooting log)
   ├─ SETUP_COMMANDS.md (detailed commands)
   ├─ README.md (series overview)
   ├─ PHASE2_CHECKLIST.md (phase 2 tasks)
