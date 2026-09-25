@@ -60,7 +60,7 @@
       },
       "gridPos": { "h": 9, "w": 8, "x": 16, "y": 0 },
       "id": 2,
-      "options": { "legend": { "displayMode": "hidden" }, "tooltip": { "mode": "single" } },
+      "options": { "legend": { "displayMode": "hidden" }, "tooltip": { "mode": "single" }, "orientation": "auto", "showValue": "auto", "stacking": "none", "xTickLabelRotation": 0, "xTickLabelSpacing": 0 },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -70,7 +70,7 @@
         }
       ],
       "title": "Usage vs Limit (%)",
-      "type": "timeseries"
+      "type": "barchart"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -87,7 +87,7 @@
       },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
       "id": 3,
-      "options": { "legend": { "displayMode": "hidden" }, "tooltip": { "mode": "single" } },
+      "options": { "legend": { "displayMode": "hidden" }, "tooltip": { "mode": "single" }, "orientation": "auto", "showValue": "auto", "stacking": "none", "xTickLabelRotation": 0, "xTickLabelSpacing": 0 },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -97,7 +97,7 @@
         }
       ],
       "title": "Last Termination Reason: OOMKilled",
-      "type": "timeseries"
+      "type": "barchart"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -112,7 +112,7 @@
       },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
       "id": 4,
-      "options": { "legend": { "displayMode": "hidden" }, "tooltip": { "mode": "single" } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -122,7 +122,7 @@
         }
       ],
       "title": "Container Restarts",
-      "type": "timeseries"
+      "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -137,7 +137,7 @@
       },
       "gridPos": { "h": 7, "w": 24, "x": 0, "y": 17 },
       "id": 5,
-      "options": { "legend": { "displayMode": "hidden" }, "tooltip": { "mode": "single" } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -147,7 +147,7 @@
         }
       ],
       "title": "Kernel OOM Kills (cgroup oom_kill counter — known to read 0 on this stack, see panel description)",
-      "type": "timeseries"
+      "type": "stat"
     }
   ],
   "refresh": "5s",
