@@ -50,6 +50,19 @@ increase(container_oom_events_total{namespace="shopnow", container="payment-serv
 ```
 
 > cAdvisor exposes the cgroup's `oom_kill` counter — the kernel-level event, independent of what Kubernetes reports.
+>
+> **Known limitation on this stack (K3s + containerd)**: this counter reads
+> `0` for the entire container lifetime, even across a confirmed OOMKill
+> (verified: exit 137, `kube_pod_container_status_last_terminated_reason=1`,
+> yet `container_oom_events_total` stayed flat at 0 the whole time via
+> `query_range`). The kubelet's built-in cAdvisor sources container stats
+> through containerd's CRI stats API, which doesn't populate the OOM event
+> counter the way a standalone cAdvisor/dockershim would. This isn't
+> something fixable in our Prometheus config — it's an upstream gap in
+> K3s/containerd's stats plugin. For the real kernel-level confirmation,
+> read the cgroup file directly (Layer 3 of the investigation):
+> `cat /sys/fs/cgroup/.../memory.events` on the node — the `oom_kill` field
+> there is accurate.
 
 ## 5. Which node did it die on?
 

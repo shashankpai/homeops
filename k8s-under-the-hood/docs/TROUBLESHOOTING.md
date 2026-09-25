@@ -221,6 +221,38 @@ Prometheus: http://192.168.1.81:30900                (or any node IP)
   seconds-to-minutes) AND breaks metric visibility. Simulate leaks as a
   gradual climb, always slower than 2-3× your scrape interval.
 
+### 5.5 Grafana dashboard: "Kernel OOM Kills" panel always shows nothing
+
+- **Symptom**: In `oom-investigation.json`, the "Working Set vs Limit"
+  panel works fine, but the bottom "Kernel OOM Kills" panel
+  (`container_oom_events_total`) stays empty/flat across every demo run.
+- **Root cause**: Verified via `query_range` across an actual confirmed
+  OOMKill (exit 137, `kube_pod_container_status_last_terminated_reason=1`)
+  that `container_oom_events_total{namespace="shopnow",
+  container="payment-service"}` stays at exactly `0` for the entire
+  container lifetime. This is an **upstream K3s/containerd limitation**:
+  the kubelet's built-in cAdvisor sources container stats through
+  containerd's CRI stats API, which doesn't populate the OOM event counter
+  the way a standalone cAdvisor or dockershim setup would. Not fixable via
+  Prometheus/Grafana config — the metric itself never gets a non-zero
+  value on this runtime.
+- **Fix**: None available at the Prometheus/K8s-manifest layer. Panel kept
+  in the dashboard on purpose (with an updated description) as a teaching
+  moment: not every metric you'd expect to exist actually populates on
+  every container runtime. The real kernel-level `oom_kill` counter is
+  read directly from the cgroup file in Layer 3 of the investigation
+  (`cat /sys/fs/cgroup/.../memory.events` on the node) — which the
+  lab-guide already does, and which IS accurate.
+- **Other two panels that looked broken were actually fine**: "Last
+  Termination Reason" and "Container Restarts" (`kube_pod_container_
+  status_last_terminated_reason`, `kube_pod_container_status_restarts_
+  total`) DO have live data — confirmed directly against Prometheus. If
+  they appear empty in Grafana, it's a stale dashboard/time-range view
+  (e.g., looking at it right after a `rollout restart`, which resets
+  restart counts to 0 and clears `lastState` until the container is
+  OOMKilled again) — not a real bug. Re-trigger `/allocate` or wait for
+  the next scrape.
+
 ---
 
 ## Quick Reference — Common Commands

@@ -126,7 +126,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "description": "The kernel-level kill counter from cAdvisor, independent of Kubernetes. Confirms the kill happened in the cgroup, not just in the API.",
+      "description": "KNOWN LIMITATION on K3s+containerd: cAdvisor's oom_kill counter is sourced via the CRI stats path, which does not populate this value here -- it reads 0 for the whole container lifetime even after a real OOMKill (verified: exit 137, kube_pod_container_status_last_terminated_reason=1, yet this stays 0). Kept in the dashboard as a teaching moment: not every metric you'd expect populates on every runtime. For the real kernel-level oom_kill counter, read it directly from the cgroup (Layer 3): cat /sys/fs/cgroup/.../memory.events on the node.",
       "fieldConfig": {
         "defaults": {
           "custom": { "drawStyle": "bars", "fillOpacity": 70, "lineWidth": 1 },
@@ -146,7 +146,7 @@
           "refId": "A"
         }
       ],
-      "title": "Kernel OOM Kills (cgroup oom_kill counter)",
+      "title": "Kernel OOM Kills (cgroup oom_kill counter — known to read 0 on this stack, see panel description)",
       "type": "timeseries"
     }
   ],
