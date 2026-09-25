@@ -193,6 +193,7 @@ kubectl port-forward -n monitoring svc/grafana 3000:3000
 ```
 
 > Observability stack setup steps and troubleshooting: see `docs/observability.md`
+> Full project troubleshooting log (Terraform, MinIO, K3s, episodes): see `docs/TROUBLESHOOTING.md`
 
 ### Check MinIO Status
 
@@ -265,6 +266,7 @@ GETTING_STARTED.md (this file)
   ├─ docs/prerequisites.md (tool setup)
   ├─ docs/architecture.md (design details)
   ├─ docs/observability.md (observability setup + troubleshooting log)
+  ├─ docs/TROUBLESHOOTING.md (master troubleshooting log — whole project)
   ├─ SETUP_COMMANDS.md (detailed commands)
   ├─ README.md (series overview)
   ├─ PHASE2_CHECKLIST.md (phase 2 tasks)

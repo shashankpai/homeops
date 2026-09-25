@@ -269,6 +269,8 @@ Next steps:
 **Setup steps, scrape-job architecture, and the full troubleshooting log**
 (RBAC for service discovery, kubelet 404/401 errors, Makefile error
 masking, verify.sh bugs) are documented in **`docs/observability.md`**.
+For issues across the WHOLE lab (Terraform/Proxmox, MinIO, Ansible/K3s,
+observability, Episode 1 demo), see **`docs/TROUBLESHOOTING.md`**.
 
 ### Kubernetes System Pods
 
