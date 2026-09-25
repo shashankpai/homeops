@@ -1,4 +1,25 @@
 # Grafana — visualization (2Gi PVC, admin/admin)
+# Datasource provisioning: without this, Grafana ships with ZERO datasources
+# and every imported dashboard complains "no datasource found".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+  labels:
+    app: grafana
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus.monitoring.svc.cluster.local:9090
+        isDefault: true
+        editable: true
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -42,6 +63,9 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/grafana
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -53,6 +77,9 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: grafana-data
+        - name: datasources
+          configMap:
+            name: grafana-datasources
 ---
 apiVersion: v1
 kind: Service

@@ -202,6 +202,25 @@ this stack. Each entry: symptom → root cause → fix → why it works.
 - **Lesson**: Never pipe a setup script through `grep` in a Make recipe —
   you lose both the exit code and the output.
 
+### 8. Grafana dashboard import: "no datasource found"
+
+- **Symptom**: Importing `episodes/01-oom-killed/dashboards/oom-investigation.json`
+  (or any dashboard) complained there was no datasource; panels showed
+  "No data"/"no datasource found".
+- **Root cause**: Grafana ships with **zero datasources**, and the stack's
+  manifest never provisioned one. The dashboard's `DS_PROMETHEUS`
+  datasource variable had nothing to resolve to.
+- **Fix**: Provision it declaratively — a ConfigMap mounted at
+  `/etc/grafana/provisioning/datasources` with a `datasources.yaml`
+  pointing at `http://prometheus.monitoring.svc.cluster.local:9090`
+  (`isDefault: true`, uid `prometheus`). See `lab/observability/grafana.yaml`.
+- **Lesson**: Any Grafana deployed into a cluster needs datasource
+  provisioning from day one, or every dashboard import breaks. Note that
+  `GF_SECURITY_ADMIN_PASSWORD` only applies on FIRST boot — the PVC
+  persists the DB, so if you changed the admin password at first login,
+  that change outlives redeploys (reset with
+  `kubectl exec -n monitoring deploy/grafana -- grafana-cli admin reset-admin-password admin`).
+
 ---
 
 ## Quick Diagnostic Commands
