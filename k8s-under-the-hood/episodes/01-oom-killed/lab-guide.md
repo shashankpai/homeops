@@ -183,11 +183,14 @@ service/payment-service created
 ### 5.3 Wait for ready
 
 ```bash
-kubectl wait --for=condition=ready pod -l app=payment-service -n shopnow --timeout=180s
+# NOTE: `kubectl wait --for=condition=ready pod -l ...` can race the
+# Deployment controller ("no matching resources found") — rollout status
+# cannot race.
+kubectl rollout status deployment/payment-service -n shopnow --timeout=180s
 ```
 
 ```
-pod/payment-service-7d9c6b5f4-x2k8p condition met
+deployment "payment-service" successfully rolled out
 ```
 
 ### 5.4 Record the pod and node
@@ -218,7 +221,8 @@ payment-service-7d9c6b5f4-x2k8p   1/1     Running   0          30s
 ### 6.2 App-reported memory
 
 ```bash
-kubectl exec -n shopnow $POD -- curl -s http://localhost:8080/usage
+# NOTE: the pod image (python:3.12-slim) has no curl/wget — use python.
+kubectl exec -n shopnow $POD -- python -c 'import urllib.request as u; print(u.urlopen("http://localhost:8080/usage").read().decode(), end="")'
 ```
 
 ```
@@ -256,7 +260,8 @@ Leave the "Working Set vs Limit" panel open — you'll watch the kill happen liv
 ### 7.1 Allocate past the limit
 
 ```bash
-kubectl exec -n shopnow $POD -- curl -s -X POST "http://localhost:8080/allocate?mb=200"
+# NOTE: python, not curl — the image has no curl.
+kubectl exec -n shopnow $POD -- python -c 'import urllib.request as u; print(u.urlopen(u.Request("http://localhost:8080/allocate?mb=200", method="POST")).read().decode(), end="")'
 ```
 
 ```
@@ -407,20 +412,29 @@ Still on the node. This is where the limit LIVES.
 
 ### 11.1 Find the pod's cgroup
 
-```bash
-CID=$(sudo crictl ps -q --name payment-service)
-CGROUP=$(sudo crictl inspect $CID | jq -r .info.runtimeSpec.cgroupsPath)
-echo $CGROUP
-```
+On K3s, cgroup paths use the **pod UID** (not the namespace), and
+`crictl inspect`'s `runtimeSpec.cgroupsPath` is often null — derive the path
+from the pod UID instead:
 
-(Alternative: `find /sys/fs/cgroup -path '*shopnow*' -name memory.max 2>/dev/null`)
+```bash
+# on your workstation — get the pod UID
+POD_UID=$(kubectl get pod -n shopnow $POD -o jsonpath='{.metadata.uid}')
+
+# on the node — the pod's cgroup slice (burstable QoS for this demo;
+# guaranteed pods live in kubepods-pod..., besteffort in kubepods-besteffort-pod...)
+CG=/sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod${POD_UID//-/_}.slice
+echo $CG
+```
+> The pod-level slice survives container restarts — the per-container
+> `cri-containerd-<cid>.scope` is garbage-collected quickly, but the pod
+> slice keeps the counters. That's where the evidence stays.
 
 ### 11.2 The three files that matter
 
 ```bash
-echo "memory.max:";     cat $CGROUP/memory.max
-echo "memory.current:"; cat $CGROUP/memory.current
-echo "memory.events:";  cat $CGROUP/memory.events
+echo "memory.max:";     cat $CG/memory.max
+echo "memory.current:"; cat $CG/memory.current
+echo "memory.events:";  cat $CG/memory.events
 ```
 
 ```
@@ -429,10 +443,10 @@ memory.current:  23592960         <- usage right now (fresh container, low)
 memory.events:
   low 0
   high 0
-  max 0
+  max 20           <- allocations were blocked at the limit
   oom 1            <- the kernel attempted an OOM kill in this cgroup
-  oom_kill 1       <- the kernel COMPLETED a kill here. Smoking gun.
-  oom_group 0
+  oom_kill 4       <- the kernel COMPLETED kills here. Smoking gun.
+  oom_group_kill 1
 ```
 
 ### 11.3 Interpretation — what Layer 3 tells you
@@ -510,6 +524,12 @@ Flips to 1 at the kill.
 # The kernel-visible kill counter (cAdvisor scrapes memory.events)
 increase(container_oom_events_total{namespace="shopnow"}[10m])
 ```
+
+> Nuance (observed live): this counter is per-container and resets when the
+> container restarts. If the kill falls between Prometheus's 15s scrapes,
+> `increase()` can read 0 — the kill was too fast to be sampled. The
+> authoritative counter is the pod-level cgroup's `memory.events`
+> (`oom_kill`, Layer 3), which persists across restarts. Trust the cgroup.
 
 ### 13.2 Grafana
 

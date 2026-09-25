@@ -41,7 +41,10 @@ banner "STEP 1 — Deploy the ShopNow Payment Service (limits: 128Mi)"
 
 kubectl apply -f "$MANIFEST"
 echo -e "${YELLOW}Waiting for the pod to be ready...${NC}"
-kubectl wait --for=condition=ready pod -l app=payment-service -n "$NS" --timeout=180s
+# NOTE: `kubectl wait --for=condition=ready pod -l ...` can race the
+# Deployment controller ("no matching resources found") — rollout status
+# waits on the Deployment itself and cannot race.
+kubectl rollout status deployment/payment-service -n "$NS" --timeout=180s
 POD=$(kubectl get pods -n "$NS" -l app=payment-service -o jsonpath='{.items[0].metadata.name}')
 NODE=$(kubectl get pod -n "$NS" "$POD" -o jsonpath='{.spec.nodeName}')
 
@@ -56,7 +59,9 @@ banner "STEP 2 — Baseline: everything looks healthy"
 
 echo -e "${YELLOW}Memory usage (reported by the app):${NC}"
 kubectl exec -n "$NS" "$POD" -- python -c "print(open('/proc/self/status').read())" 2>/dev/null | grep -E "^(VmRSS|VmHWM)" || true
-kubectl exec -n "$NS" "$POD" -- curl -s http://localhost:8080/usage
+# NOTE: the pod image (python:3.12-slim) has no curl/wget — use python's
+# urllib for the app's HTTP endpoints.
+kubectl exec -n "$NS" "$POD" -- python -c 'import urllib.request as u; print(u.urlopen("http://localhost:8080/usage").read().decode(), end="")'
 
 echo ""
 echo -e "${YELLOW}Pod top (metrics-server view):${NC}"
@@ -73,7 +78,7 @@ pause "Now trigger the OOM"
 banner "STEP 3 — Trigger: POST /allocate?mb=200 (past the 128Mi limit)"
 
 echo -e "${YELLOW}Telling the payment service to allocate 200MB and hold it...${NC}"
-kubectl exec -n "$NS" "$POD" -- curl -s -X POST "http://localhost:8080/allocate?mb=200" || true
+kubectl exec -n "$NS" "$POD" -- python -c 'import urllib.request as u; print(u.urlopen(u.Request("http://localhost:8080/allocate?mb=200", method="POST")).read().decode(), end="")' || true
 
 echo ""
 echo -e "${YELLOW}Watching for the OOMKill (exit code 137)...${NC}"
@@ -140,18 +145,24 @@ banner "LAYER 3 — cgroups: where the 128Mi limit REALLY lives"
 
 echo -e "${YELLOW}The Deployment's 'limits.memory: 128Mi' becomes a cgroup file on the node:${NC}"
 cat << EOF
-  On node $NODE, find the pod's cgroup:
+  On node $NODE. NOTE: on K3s cgroup paths use the POD UID (not the
+  namespace), and crictl's runtimeSpec.cgroupsPath is often null —
+  derive the path from the pod UID instead:
 
-    CID=\$(crictl ps -q --name payment-service)
-    CGROUP=\$(crictl inspect \$CID | jq -r .info.runtimeSpec.cgroupsPath)
-    # or: find /sys/fs/cgroup -path '*shopnow*' -name 'memory.max'
+    # on your workstation — get the pod UID
+    POD_UID=\$(kubectl get pod -n shopnow $POD -o jsonpath='{.metadata.uid}')
 
-    cat \$CGROUP/memory.max       <- 134217728  (= 128Mi, the limit)
-    cat \$CGROUP/memory.current   <- usage at any moment
-    cat \$CGROUP/memory.events    <- oom_kill counter! Non-zero = kernel killed here
+    # on the node — the pod's cgroup slice (burstable QoS for this demo)
+    CG=/sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod\${POD_UID//-/_}.slice
 
-  >>> memory.events is the smoking gun: when ooom_kill increments,
+    cat \$CG/memory.max       <- 134217728  (= 128Mi, the limit)
+    cat \$CG/memory.current   <- usage at any moment
+    cat \$CG/memory.events    <- oom_kill counter! Non-zero = kernel killed here
+
+  >>> memory.events is the smoking gun: when oom_kill increments,
       the kernel OOM killer selected a process INSIDE this cgroup.
+      The pod-level slice survives container restarts (the per-container
+      scope is GC'd quickly) — that's where the evidence stays.
 EOF
 
 pause "Below cgroups: the kernel itself"
