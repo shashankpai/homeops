@@ -23,6 +23,10 @@ make verify
 kubectl port-forward -n monitoring svc/prometheus 9090:9090
 # Open http://localhost:9090 — Status → Targets
 
+# Or check from the CLI (NOTE: the endpoint is /api/v1/status/buildinfo —
+# /api/v1/status/build was removed in Prometheus v2.x and 404s):
+curl -s http://localhost:9090/api/v1/status/buildinfo | jq -r .data.version
+
 # Access Grafana
 kubectl port-forward -n monitoring svc/grafana 3000:3000
 # Open http://localhost:3000 (admin/admin)
