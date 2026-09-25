@@ -246,8 +246,9 @@ kubectl exec -n shopnow $POD -- cat /sys/fs/cgroup/memory.max
 ### 6.4 (Optional) Grafana dashboard
 
 ```bash
-kubectl port-forward -n monitoring svc/grafana 3000:3000 &
-# http://localhost:3000 (admin/admin)
+# Grafana is exposed directly on every node (LoadBalancer, pinned port):
+#   http://192.168.1.81:30300  (admin/admin)
+# (or any node IP: .82 / .83)
 # Dashboards -> Import -> episodes/01-oom-killed/dashboards/oom-investigation.json
 ```
 
@@ -501,8 +502,9 @@ Back on your workstation.
 ### 13.1 Prometheus
 
 ```bash
-kubectl port-forward -n monitoring svc/prometheus 9090:9090 &
-# http://localhost:9090
+# Prometheus is exposed directly on every node (LoadBalancer, pinned port):
+#   http://192.168.1.81:30900
+# (or any node IP: .82 / .83)
 ```
 
 Run these queries (full list in `episodes/01-oom-killed/promql/queries.md`):

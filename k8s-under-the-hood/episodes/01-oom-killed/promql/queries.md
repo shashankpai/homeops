@@ -1,6 +1,6 @@
 # Episode 1 — PromQL Queries (OOMKilled Investigation)
 
-All queries run against the lab Prometheus (`kubectl port-forward -n monitoring svc/prometheus 9090:9090`, then http://localhost:9090 → Graph tab).
+All queries run against the lab Prometheus (`http://192.168.1.81:30900` — any node IP; LoadBalancer with pinned port, no port-forward needed → Graph tab).
 
 ## 1. Memory usage vs. limit (the "cliff" before the kill)
 

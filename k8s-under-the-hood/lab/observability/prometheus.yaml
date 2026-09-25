@@ -146,9 +146,13 @@ metadata:
   labels:
     app: prometheus
 spec:
+  # LoadBalancer: K3s servicelb binds the port on every node's IP, so
+  # Prometheus is reachable at http://<any-node-ip>:9090 — no port-forward.
+  type: LoadBalancer
   selector:
     app: prometheus
   ports:
     - port: 9090
       targetPort: 9090
+      nodePort: 30900
       name: web

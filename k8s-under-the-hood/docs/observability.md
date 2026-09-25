@@ -19,17 +19,27 @@ make observability-deploy
 # Verify everything
 make verify
 
-# Access Prometheus
-kubectl port-forward -n monitoring svc/prometheus 9090:9090
-# Open http://localhost:9090 — Status → Targets
+# Access Prometheus — directly on any node IP (no port-forward needed):
+#   http://192.168.1.81:30900   (LoadBalancer with pinned nodePort 30900)
+# Open Status → Targets
 
 # Or check from the CLI (NOTE: the endpoint is /api/v1/status/buildinfo —
 # /api/v1/status/build was removed in Prometheus v2.x and 404s):
-curl -s http://localhost:9090/api/v1/status/buildinfo | jq -r .data.version
+curl -s http://192.168.1.81:30900/api/v1/status/buildinfo | jq -r .data.version
 
-# Access Grafana
-kubectl port-forward -n monitoring svc/grafana 3000:3000
-# Open http://localhost:3000 (admin/admin)
+# Access Grafana — directly on any node IP:
+#   http://192.168.1.81:30300   (admin/admin)
+#
+# Why not kubectl port-forward? Its upstream streams to the kubelet are
+# created lazily and can time out under load (Grafana's UI opens many
+# parallel connections), and any pod rollout breaks the tunnel with
+# spammy "error creating forwarding stream" messages. The LoadBalancer
+# services (K3s servicelb) are stable and silent.
+#
+# If you DO need a port-forward, keep your terminal clean by sending its
+# output to a file instead:
+#   kubectl port-forward -n monitoring svc/grafana 3000:3000 > /tmp/pf-grafana.log 2>&1 &
+#   pkill -f "port-forward.*grafana"   # to stop it
 ```
 
 ## What Gets Deployed

@@ -89,9 +89,14 @@ metadata:
   labels:
     app: grafana
 spec:
+  # LoadBalancer: K3s servicelb binds the port on every node's IP, so
+  # Grafana is reachable at http://<any-node-ip>:3000 — no port-forward,
+  # no stream timeouts.
+  type: LoadBalancer
   selector:
     app: grafana
   ports:
     - port: 3000
       targetPort: 3000
+      nodePort: 30300
       name: web

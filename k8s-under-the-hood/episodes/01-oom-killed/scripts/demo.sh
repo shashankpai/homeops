@@ -193,11 +193,8 @@ banner "LAYER 5 — Metrics: PromQL (the visual version of everything above)"
 
 echo -e "${YELLOW}Open Prometheus/Grafana:${NC}"
 cat << EOF
-  kubectl port-forward -n monitoring svc/prometheus 9090:9090
-  open http://localhost:9090
-
-  kubectl port-forward -n monitoring svc/grafana 3000:3000
-  open http://localhost:3000  (admin/admin)
+  Prometheus: http://192.168.1.81:30900   (any node IP; LoadBalancer, no port-forward)
+  Grafana:    http://192.168.1.81:30300   (any node IP; admin/admin)
 
   In Grafana: Dashboards -> Import -> episodes/01-oom-killed/dashboards/oom-investigation.json
 
