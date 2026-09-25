@@ -41,7 +41,7 @@ This document maps each narration phase to the corresponding lab-guide sections 
 - **Lab sections:** 7 (trigger)
 - **Duration:** ~2 minutes of screen time
 - **Key commands:** `python -c urllib POST /allocate?mb=200` (image has no curl), `kubectl get pods -w`
-- **Expected output:** "allocated 200 MB"; restarts 0→1 within seconds; Grafana shows the cliff
+- **Expected output:** "allocating 200MB in 2MB steps..."; restarts 0→1 after ~90-110s of gradual climb; Grafana shows the cliff live
 - **Recording notes:** split-screen terminal + Grafana; 60fps; the restart tick is the moment — don't cut away early
 
 ### Layer 1–2 (Phases 6, 8)

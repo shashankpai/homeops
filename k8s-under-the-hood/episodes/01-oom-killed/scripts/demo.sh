@@ -77,16 +77,19 @@ pause "Now trigger the OOM"
 # --- 3. Trigger --------------------------------------------------------------
 banner "STEP 3 — Trigger: POST /allocate?mb=200 (past the 128Mi limit)"
 
-echo -e "${YELLOW}Telling the payment service to allocate 200MB and hold it...${NC}"
+echo -e "${YELLOW}Telling the payment service to allocate 200MB gradually (~1MB/s) and hold it...${NC}"
 kubectl exec -n "$NS" "$POD" -- python -c 'import urllib.request as u; print(u.urlopen(u.Request("http://localhost:8080/allocate?mb=200", method="POST")).read().decode(), end="")' || true
 
 echo ""
 echo -e "${YELLOW}Watching for the OOMKill (exit code 137)...${NC}"
 echo -e "${YELLOW}The next RESTART count / OOMKilled line is the moment of death.${NC}"
 
-# Watch until restart count increments (timeout 120s)
+# Watch until restart count increments (timeout 180s).
+# NOTE: /allocate now grows the working set gradually (~1MB/s) instead of
+# in one instantaneous jump -- that's deliberate, see mem-hog.py -- so the
+# kill typically lands around ~100s in, not immediately.
 BASE_RESTARTS=$(kubectl get pod -n "$NS" "$POD" -o jsonpath='{.status.containerStatuses[0].restartCount}')
-DEADLINE=$((SECONDS + 120))
+DEADLINE=$((SECONDS + 180))
 while [ $SECONDS -lt $DEADLINE ]; do
     RESTARTS=$(kubectl get pod -n "$NS" "$POD" -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo "x")
     if [ "$RESTARTS" != "$BASE_RESTARTS" ]; then
@@ -97,7 +100,7 @@ while [ $SECONDS -lt $DEADLINE ]; do
 done
 
 if [ "${RESTARTS:-}" = "$BASE_RESTARTS" ]; then
-    echo -e "${RED}Container did not get OOMKilled within 120s — check: kubectl describe pod -n $NS $POD${NC}"
+    echo -e "${RED}Container did not get OOMKilled within 180s — check: kubectl describe pod -n $NS $POD${NC}"
     exit 1
 fi
 

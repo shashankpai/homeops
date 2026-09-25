@@ -191,12 +191,19 @@ These 5 visual sequences appear multiple times throughout the episode. They are 
 
 ### Phase 5 — Trigger the OOMKill (8:00–10:00)
 
+> **Recording note:** the allocation now climbs gradually (~1MB/s, ~90-110s
+> to reach the limit) so Grafana actually shows the ascent — a single
+> instant allocation dies too fast for Prometheus to sample. Live, this
+> phase takes ~2 minutes; **time-lapse/speed-ramp the `kubectl get pods -w`
+> + Grafana split-screen in post** to compress it back to the ~90s slot
+> below, or narrate live over the real wait.
+
 | Time | Narration cue | On screen | Visual |
 |---|---|---|---|
-| 8:00 | "200 megabytes on a 128 limit" | Terminal: `/allocate?mb=200` typed slowly — dramatic | — |
+| 8:00 | "200 megabytes on a 128 limit — but it grows in slowly, like a real leak" | Terminal: `/allocate?mb=200` typed slowly — dramatic | — |
 | 8:22 | "your classic production memory leak" | — | — |
-| 8:48 | `kubectl get pods -w` | Split screen: terminal watch LEFT, Grafana cliff RIGHT | **VS-1: The Memory Cliff, LIVE** |
-| 9:00 | "there it goes" | Working set hits limit line; RESTARTS 0→1 | Red flash at the drop; "SIGKILL" stamp |
+| 8:48 | `kubectl get pods -w` | Split screen: terminal watch LEFT, Grafana cliff RIGHT (speed-ramped) | **VS-1: The Memory Cliff, LIVE** |
+| 9:00 | "there it goes" | Working set climbs and hits the limit line; RESTARTS 0→1 | Red flash at the drop; "SIGKILL" stamp |
 | 9:32 | "climb, cliff, restart" | Grafana replay of the sawtooth | **VS-5: The Sawtooth** |
 | 9:55 | "who killed it? Layer one" | **VS-2** descent, Layer 1 highlighted | — |
 

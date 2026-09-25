@@ -266,12 +266,12 @@ kubectl exec -n shopnow $POD -- python -c 'import urllib.request as u; print(u.u
 ```
 
 ```
-allocated 200 MB; rss_mb=219.7
+allocating 200MB in 2MB steps every 2s (~200s to finish, or OOMKilled before then); rss_mb=24.9
 ```
 
-**Why we run it:** The app now holds 200 MB it will never release — simulating a caching bug or leak. The working set is now past the 128 MiB cgroup limit. The kernel notices within seconds.
+**Why we run it:** The app grows its working set by 2 MB every 2 seconds — simulating a caching bug or leak filling up gradually (a real leak rarely blows past a limit instantly). The call returns immediately; the growth happens in a background thread. Watch the Grafana panel: the line climbs steadily until it crosses the 128 MiB cgroup limit — usually around 90-110 seconds in — at which point the kernel kills it.
 
-> Note: this curl may itself get killed mid-response — the OOM killer doesn't wait politely.
+> Why gradual, not instant? A single one-shot allocation crosses the limit and gets SIGKILLed within milliseconds — too fast for Prometheus's 15s scrape (and cAdvisor's own internal sampling) to ever see the climb. You'd get a real OOMKill but a flat, boring graph.
 
 ### 7.2 Watch the death
 
@@ -279,7 +279,7 @@ allocated 200 MB; rss_mb=219.7
 kubectl get pods -n shopnow -w
 ```
 
-Within seconds you'll see `RESTARTS` tick from `0` to `1` (Status may briefly show the pod still `Running` — the CONTAINER restarted, the POD object stayed).
+After roughly 90-110 seconds you'll see `RESTARTS` tick from `0` to `1` (Status may briefly show the pod still `Running` — the CONTAINER restarted, the POD object stayed).
 
 ```
 NAME                       READY   STATUS    RESTARTS   AGE

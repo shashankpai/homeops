@@ -137,7 +137,8 @@ Let's wait for it to be ready and note which node it landed on:
 [4:58 — show terminal]
 
 ```bash
-kubectl wait --for=condition=ready pod -l app=payment-service -n shopnow --timeout=180s
+# (kubectl wait on pods can race the Deployment controller — use rollout status)
+kubectl rollout status deployment/payment-service -n shopnow --timeout=180s
 POD=$(kubectl get pods -n shopnow -l app=payment-service -o jsonpath='{.items[0].metadata.name}')
 NODE=$(kubectl get pod -n shopnow $POD -o jsonpath='{.spec.nodeName}')
 echo "Pod: $POD | Node: $NODE"
@@ -173,7 +174,8 @@ Running. Zero restarts. Now, what's it using?
 [6:18 — show terminal]
 
 ```bash
-kubectl exec -n shopnow $POD -- curl -s http://localhost:8080/usage
+# (the pod image has no curl — python one-liner instead)
+kubectl exec -n shopnow $POD -- python -c 'import urllib.request as u; print(u.urlopen("http://localhost:8080/usage").read().decode(), end="")'
 ```
 
 ```
@@ -212,21 +214,22 @@ Alright. Everything is healthy. Let's kill it.
 
 [8:00]
 
-The app has an endpoint called allocate. I'm going to ask it for 200 megabytes — on a 128 megabyte limit.
+The app has an endpoint called allocate. I'm going to ask it for 200 megabytes — on a 128 megabyte limit. It won't slam into the limit instantly — it grows by two megabytes every couple seconds, like a real leak filling up. That's on purpose: it gives us a good hundred seconds to actually watch the climb in Grafana instead of blinking and missing it.
 
 [8:10 — show terminal]
 
 ```bash
-kubectl exec -n shopnow $POD -- curl -s -X POST "http://localhost:8080/allocate?mb=200"
+# (python, not curl — the image has no curl)
+kubectl exec -n shopnow $POD -- python -c 'import urllib.request as u; print(u.urlopen(u.Request("http://localhost:8080/allocate?mb=200", method="POST")).read().decode(), end="")'
 ```
 
 ```
-allocated 200 MB; rss_mb=219.7
+allocating 200MB in 2MB steps every 2s (~200s to finish, or OOMKilled before then); rss_mb=24.9
 ```
 
 [8:22]
 
-Allocated two hundred megabytes. It's holding it — never freeing — like a cache that forgot to have a maximum size. This is your classic production memory leak or runaway cache, compressed into one HTTP call.
+The call returns immediately — the allocation happens in the background, growing a couple megabytes at a time. It's holding every bit — never freeing — like a cache that forgot to have a maximum size. This is your classic production memory leak or runaway cache.
 
 [8:38]
 
@@ -427,9 +430,14 @@ Everything in this layer happens in `/sys/fs/cgroup` — a magic filesystem the 
 [16:20 — show terminal]
 
 ```bash
-CID=$(sudo crictl ps -q --name payment-service)
-CGROUP=$(sudo crictl inspect $CID | jq -r .info.runtimeSpec.cgroupsPath)
-echo $CGROUP
+# On your workstation — get the pod UID (on K3s, cgroup paths use the POD UID;
+# crictl's runtimeSpec.cgroupsPath is null there):
+POD_UID=$(kubectl get pod -n shopnow $POD -o jsonpath='{.metadata.uid}')
+
+# On the node — the pod's cgroup slice (burstable QoS). It survives container
+# restarts, unlike the per-container scope which gets GC'd quickly:
+CG=/sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod${POD_UID//-/_}.slice
+echo $CG
 ```
 
 [16:40]
@@ -439,21 +447,21 @@ That's our container's cgroup path. Now, three files in that directory tell the 
 [16:48 — show terminal]
 
 ```bash
-echo "memory.max:";     cat $CGROUP/memory.max
-echo "memory.current:"; cat $CGROUP/memory.current
-echo "memory.events:";  cat $CGROUP/memory.events
+echo "memory.max:";     cat $CG/memory.max
+echo "memory.current:"; cat $CG/memory.current
+echo "memory.events:";  cat $CG/memory.events
 ```
 
 ```
 memory.max:      134217728
-memory.current:  23592960
+memory.current:  14290944
 memory.events:
   low 0
   high 0
-  max 0
+  max 20
   oom 1
-  oom_kill 1
-  oom_group 0
+  oom_kill 4
+  oom_group_kill 1
 ```
 
 [17:20]
@@ -466,7 +474,7 @@ File two: memory.current. Twenty-three megabytes — because this is the NEW con
 
 [17:55]
 
-File three is the one I want you to burn into memory: memory.events. Look at the last two meaningful lines: `oom 1` — the kernel attempted an OOM kill in this cgroup. And `oom_kill 1` — the kernel COMPLETED a kill here.
+File three is the one I want you to burn into memory: memory.events. `oom 1` — the kernel attempted an OOM kill in this cgroup. And `oom_kill 4` — the kernel COMPLETED kills here. (Four, because the app is a threaded server and the cgroup's oom.group flag takes the whole group down — the point is the counter is NON-ZERO and only the kernel writes it.)
 
 [18:20]
 
@@ -546,7 +554,8 @@ Everything so far was forensics — investigating AFTER the death. Metrics let y
 [22:15 — show terminal]
 
 ```bash
-kubectl port-forward -n monitoring svc/prometheus 9090:9090 &
+# Prometheus is exposed directly on every node (LoadBalancer, pinned port):
+#   http://192.168.1.81:30900   (any node IP — no port-forward needed)
 ```
 
 [22:25]

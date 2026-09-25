@@ -28,22 +28,54 @@ data:
     Endpoints:
       GET  /healthz   liveness/readiness target (always 200)
       GET  /usage     current RSS of this process, in MB
-      POST /allocate?mb=N   allocate N MB and hold it (simulates a leak)
-      POST /release    drop all held allocations
+      POST /allocate?mb=N   allocate N MB gradually (in small chunks over
+                             several seconds) and hold it (simulates a leak)
+      POST /release    stop allocating and drop all held allocations
+
+    NOTE: allocation is deliberately gradual. A single instantaneous
+    bytearray(N MB) crosses the cgroup memory limit and gets SIGKILLed by
+    the kernel within milliseconds — far faster than Prometheus's scrape
+    interval (15s) can sample it, so the "climb to the ceiling" never shows
+    up in the metrics/graph even though the OOMKill did happen. Chunking
+    the allocation with a short sleep between chunks makes the working set
+    climb across several scrape intervals, which is what you actually want
+    to see on the Working Set vs Limit panel.
     """
     import gc
     import os
     import resource
+    import threading
+    import time
 
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from urllib.parse import parse_qs, urlparse
 
     # The "leak": allocations are held here and never freed (until /release).
     _held = []
+    _held_lock = threading.Lock()
+    _stop_event = threading.Event()
+
+    # ~1MB/s climb: slow enough that Prometheus's 15s scrape interval (and
+    # cAdvisor's own internal housekeeping, which lags real-time and can
+    # miss fast changes) gets several clean samples of the ascent before
+    # the kill, instead of the container dying inside a single scrape gap.
+    CHUNK_MB = 2
+    CHUNK_INTERVAL_SEC = 2
 
     def rss_mb():
         # ru_maxrss is in KiB on Linux
         return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+
+    def _allocate_gradually(total_mb):
+        allocated = 0
+        while allocated < total_mb and not _stop_event.is_set():
+            chunk = min(CHUNK_MB, total_mb - allocated)
+            with _held_lock:
+                _held.append(bytearray(chunk * 1024 * 1024))
+            allocated += chunk
+            gc.collect()
+            print(f"[allocator] +{chunk}MB (requested so far={allocated}MB, rss={rss_mb():.1f}MB)", flush=True)
+            time.sleep(CHUNK_INTERVAL_SEC)
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body):
@@ -75,12 +107,14 @@ data:
                 if mb <= 0 or mb > 4096:
                     self._send(400, "mb must be in 1..4096\n")
                     return
-                # bytearray is zero-filled and counts toward RSS.
-                _held.append(bytearray(mb * 1024 * 1024))
-                gc.collect()
-                self._send(200, f"allocated {mb} MB; rss_mb={rss_mb():.1f}\n")
+                _stop_event.clear()
+                eta_sec = (mb / CHUNK_MB) * CHUNK_INTERVAL_SEC
+                threading.Thread(target=_allocate_gradually, args=(mb,), daemon=True).start()
+                self._send(200, f"allocating {mb}MB in {CHUNK_MB}MB steps every {CHUNK_INTERVAL_SEC}s (~{eta_sec:.0f}s to finish, or OOMKilled before then); rss_mb={rss_mb():.1f}\n")
             elif parsed.path == "/release":
-                _held.clear()
+                _stop_event.set()
+                with _held_lock:
+                    _held.clear()
                 gc.collect()
                 self._send(200, f"released; rss_mb={rss_mb():.1f}\n")
             else:
