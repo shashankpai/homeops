@@ -1,0 +1,175 @@
+# Episode 1 — ShopNow Payment Service (memory-hungry variant)
+#
+# The app is a stdlib-only Python HTTP service (see ConfigMap below) that
+# exposes POST /allocate?mb=N to allocate and HOLD memory — simulating a
+# caching bug / leak. With memory limits at 128Mi, allocating ~200MB sends
+# the container's working set past its cgroup limit and the kernel's OOM
+# killer terminates it: exit code 137, Reason: OOMKilled.
+#
+# QoS class: Burstable (requests 64Mi < limits 128Mi).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shopnow
+  labels:
+    app.kubernetes.io/part-of: shopnow
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-service-code
+  namespace: shopnow
+data:
+  mem-hog.py: |
+    #!/usr/bin/env python3
+    """ShopNow Payment Service — memory-hungry demo build.
+
+    Endpoints:
+      GET  /healthz   liveness/readiness target (always 200)
+      GET  /usage     current RSS of this process, in MB
+      POST /allocate?mb=N   allocate N MB and hold it (simulates a leak)
+      POST /release    drop all held allocations
+    """
+    import gc
+    import os
+    import resource
+
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    # The "leak": allocations are held here and never freed (until /release).
+    _held = []
+
+    def rss_mb():
+        # ru_maxrss is in KiB on Linux
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, code, body):
+            data = body.encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            path = urlparse(self.path).path
+            if path == "/healthz":
+                self._send(200, "ok")
+            elif path == "/usage":
+                self._send(200, f"rss_mb={rss_mb():.1f}\n")
+            else:
+                self._send(404, "not found\n")
+
+        def do_POST(self):
+            parsed = urlparse(self.path)
+            if parsed.path == "/allocate":
+                params = parse_qs(parsed.query)
+                try:
+                    mb = int(params.get("mb", ["0"])[0])
+                except ValueError:
+                    self._send(400, "mb must be an integer\n")
+                    return
+                if mb <= 0 or mb > 4096:
+                    self._send(400, "mb must be in 1..4096\n")
+                    return
+                # bytearray is zero-filled and counts toward RSS.
+                _held.append(bytearray(mb * 1024 * 1024))
+                gc.collect()
+                self._send(200, f"allocated {mb} MB; rss_mb={rss_mb():.1f}\n")
+            elif parsed.path == "/release":
+                _held.clear()
+                gc.collect()
+                self._send(200, f"released; rss_mb={rss_mb():.1f}\n")
+            else:
+                self._send(404, "not found\n")
+
+        def log_message(self, fmt, *args):
+            # One-line access log to stdout.
+            print(f"{self.address_string()} {fmt % args}", flush=True)
+
+    if __name__ == "__main__":
+        port = int(os.environ.get("PORT", "8080"))
+        print(f"payment-service listening on :{port}", flush=True)
+        ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  namespace: shopnow
+  labels:
+    app: payment-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      containers:
+        - name: payment-service
+          image: python:3.12-slim
+          command: ["python", "/app/mem-hog.py"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PORT
+              value: "8080"
+          resources:
+            # Burstable QoS: requests < limits.
+            # 128Mi is the cgroup memory.max the kernel enforces.
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: code
+          configMap:
+            name: payment-service-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  namespace: shopnow
+  labels:
+    app: payment-service
+spec:
+  selector:
+    app: payment-service
+  ports:
+    - port: 80
+      targetPort: http
+      name: http
