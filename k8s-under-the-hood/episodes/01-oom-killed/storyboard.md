@@ -242,11 +242,11 @@ These 5 visual sequences appear multiple times throughout the episode. They are 
 | Time | Narration cue | On screen | Visual |
 |---|---|---|---|
 | 16:00 | "a magic filesystem the kernel exposes" | `/sys/fs/cgroup` tree visual | VS-2, Layer 3 highlighted |
-| 16:20 | find the cgroup | Terminal: cgroupsPath | — |
+| 16:20 | find the cgroup | Terminal: derive slice from pod UID (`kubepods-burstable-pod<uid>.slice`) | — |
 | 16:48 | "three files tell the entire story" | Terminal: cat max/current/events | Each file zoomed in turn |
 | 17:20 | "memory.max — your YAML as a kernel rule" | Flashback VS-3: same number, third appearance | — |
 | 17:40 | "memory.current — the NEW container" | Note: low because restarted | — |
-| 17:55 | "burn this into memory: memory.events" | Zoom: `oom 1`, `oom_kill 1` | **Red highlight — smoking gun card** |
+| 17:55 | "burn this into memory: memory.events" | Zoom: `oom 1`, `oom_kill 4` | **Red highlight — smoking gun card** |
 | 18:45 | "the kernel's own counter" | Card: "NO interpretation needed" | — |
 
 ---

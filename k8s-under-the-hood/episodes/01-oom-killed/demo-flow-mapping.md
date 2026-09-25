@@ -33,14 +33,14 @@ This document maps each narration phase to the corresponding lab-guide sections 
 ### Baseline Phase (Phase 4)
 - **Lab sections:** 6 (baseline)
 - **Duration:** ~2 minutes of screen time
-- **Key commands:** `kubectl get pod`, `curl /usage`, `cat /sys/fs/cgroup/memory.max`
+- **Key commands:** `kubectl get pod`, `python -c urllib /usage` (no curl in image), `cat /sys/fs/cgroup/memory.max`
 - **Expected output:** Running / 0 restarts; rss ≈ 18 MB; memory.max = 134217728
 - **Gotcha for recording:** the memory.max value must match the Phase 2 diagram (same number on screen 3 times by now)
 
 ### Kill Phase (Phase 5) ← **Visual Centerpiece**
 - **Lab sections:** 7 (trigger)
 - **Duration:** ~2 minutes of screen time
-- **Key commands:** `curl -X POST /allocate?mb=200`, `kubectl get pods -w`
+- **Key commands:** `python -c urllib POST /allocate?mb=200` (image has no curl), `kubectl get pods -w`
 - **Expected output:** "allocated 200 MB"; restarts 0→1 within seconds; Grafana shows the cliff
 - **Recording notes:** split-screen terminal + Grafana; 60fps; the restart tick is the moment — don't cut away early
 
