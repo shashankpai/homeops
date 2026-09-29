@@ -545,18 +545,39 @@ Metrics are the HISTORICAL RECORD. Layers 1–4 showed you the present; Layer 5 
 
 ## 14. Concepts: Working Set vs RSS vs Virtual Memory
 
-Three different "memory" numbers, and the kernel only counts one of them:
+One concept to nail down before we wrap, because it trips everyone up — including people who've run Kubernetes for years: **WHICH memory number counts against the limit?** You'll hear three: virtual memory, RSS, and working set. They are not the same thing, and only one of them is on trial.
 
 ```
-Virtual memory (VmSize)     "I have MAPPED 2 GB"        <- irrelevant to the limit
-     |
-RSS                         "I am TOUCHING 500 MB"      <- close, but includes file cache
-     |
-Working set                 "I am USING 220 MB"         <- THIS is what counts
-     (RSS minus inactive file cache)
+Virtual memory:  "I have MAPPED 2 GB"          <- reserved, not used. Kernel doesn't care.
+RSS:             "500 MB of my pages in RAM"   <- close, but includes pages the kernel can take back
+Working set:     "220 MB I genuinely need"     <- THIS is what the limit effectively enforces
 ```
 
-The kernel charges the **working set** (`container_memory_working_set_bytes` in Prometheus) against `memory.max`. That's why "but the app only maps 2GB of virtual space" doesn't save you — and why inactive page cache can be reclaimed instead of killing you. When the WORKING SET crosses the limit, the OOM killer wakes up.
+**Virtual memory** first, quickly: it's address space your process has MAPPED. mmap a two-gigabyte file, touch one byte of it — virtual memory says two gigs. The kernel doesn't care. Reservation is not usage.
+
+**RSS** — resident set size — is the pages actually sitting in RAM right now. Closer. But RSS has a blind spot: it counts file-backed pages — your binary, your shared libraries, data the kernel read from disk on your behalf. And a big chunk of that is RECLAIMABLE. The kernel can drop a clean file page and re-read it from disk later. It's the landlord's folding chair in your apartment: it's in your space, but the landlord can take it back anytime.
+
+**The working set** is what's left once you subtract the stuff the kernel can take back: resident memory minus inactive file cache. Your heap, your stack, your live objects — the memory that IS the app. In Prometheus, that's `container_memory_working_set_bytes`. That's the line we've been watching in Grafana all episode.
+
+### What Does `memory.max` Actually Count?
+
+Now — the question you should be asking: when the kernel checks `memory.max`, does it compare RSS? Working set? Here's the precise answer: **`memory.max` caps a number called `memory.current`** — the same file we read at Layer 3 — and that counts **EVERYTHING** charged to the cgroup: anonymous memory, kernel memory, and file cache. Not RSS. Not working set. The whole bucket.
+
+```
+memory.current  =  working set  +  inactive file cache
+                     (must fit)      (kernel evicts this first)
+
+memory.max is checked against ALL of memory.current —
+but the kernel evicts the cache before it reaches for the gun.
+```
+
+### The Reclaim Dance Before the Kill
+
+And here's the part that saves you: **before the kernel reaches for the OOM killer, it does a cleanup pass.** It evicts the reclaimable stuff — mostly that file cache — to get back under `memory.max`. If dropping cache is enough, nobody dies. That's why you sometimes see memory sit AT the limit for a while before a kill. You're watching the reclaim dance. (No swap in this lab — reclaim is the only relief valve before the kill.)
+
+The kill only happens when the kernel has thrown overboard everything it CAN — and the remaining, unreclaimable part, the working set, STILL doesn't fit. So the precise answer to "does `memory.max` count RSS or working set?" is: **neither, exactly.** It caps total usage including cache — but after reclaim, the number that actually has to fit under the limit is the working set. That's why `container_memory_working_set_bytes` is THE number to graph against the limit — and it's what `kubectl top` shows you too.
+
+You can even see the difference in this episode: the app reported `rss_mb=18.4` at baseline, and Grafana showed about twenty-four megs of working set. Both numbers are correct — different definitions. RSS counts the landlord's chairs; working set doesn't, but adds kernel memory the cgroup is charged for. So when someone says "the app only uses 300 megs, the limit is 500, and it still got OOMKilled" — check which number they're reading. **The working set is the number on trial here. Always.**
 
 ---
 
