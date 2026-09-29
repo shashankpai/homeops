@@ -1,0 +1,201 @@
+{
+  "__inputs": [],
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "The eviction signal the kubelet actually watches. Watch it fall toward the red threshold as the hogs ramp — the mirror image of Episode 1's working-set climb. When it crosses, the kubelet evicts. Threshold shown is 1Gi (matches the demo worker's configured eviction-hard); use 100Mi for the kubelet default.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": true },
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "eviction threshold (1Gi)" },
+            "properties": [
+              { "id": "custom.fillOpacity", "value": 0 },
+              { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "node_memory_MemAvailable_bytes",
+          "legendFormat": "mem available ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "1024 * 1024 * 1024",
+          "legendFormat": "eviction threshold (1Gi)",
+          "refId": "B"
+        }
+      ],
+      "title": "Node Memory Available vs Eviction Threshold (the drain before the eviction)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "1 = node is under MemoryPressure. Flips true when the threshold crosses, clears after the evicted hogs' memory is freed. The scheduler sees this too — rescheduled pods avoid the pressured node.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 40, "lineWidth": 2, "showPoints": "always", "spanNulls": true },
+          "decimals": 0,
+          "max": 1,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "kube_node_status_condition{condition=\"MemoryPressure\", status=\"true\"}",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Node Condition: MemoryPressure",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "1 = the kubelet evicted this pod. The API-visible verdict (kubectl renders it as STATUS: Evicted). Contrast with Episode 1: the OOMKilled pod stayed Running with RESTARTS+1; evicted pods go Failed and are deleted from the node.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 40, "lineWidth": 2, "showPoints": "always", "spanNulls": true },
+          "decimals": 0,
+          "max": 1,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "kube_pod_status_reason{namespace=\"eviction-demo\", reason=\"Evicted\"}",
+          "legendFormat": "evicted ({{pod}})",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "kube_pod_status_phase{namespace=\"eviction-demo\", phase=\"Failed\"}",
+          "legendFormat": "failed ({{pod}})",
+          "refId": "B"
+        }
+      ],
+      "title": "Pod Status: Evicted / Failed (evicted pods never restart in place)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "The eviction ranking, visualized. eviction-demo (BestEffort hogs) climbs with NO limit line to hit — nothing kills them per-container. shopnow (Burstable payment-service) rides through the pressure: its usage stays BELOW its request, so the kubelet ranks it safer than every BestEffort pod. Same cluster, same pressure, different fates — QoS is the difference.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "showPoints": "never", "spanNulls": true },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (namespace) (container_memory_working_set_bytes{namespace=~\"eviction-demo|shopnow\", container!=\"\"})",
+          "legendFormat": "{{namespace}} (working set)",
+          "refId": "A"
+        }
+      ],
+      "title": "QoS Lens: Who Dies First and Why (working set by namespace)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "The split view — the money shot. Ep1 series: the container working set climbs its 128Mi limit, OOMKilled, restarts step up, pod STAYS on the node. Ep2 series: no container limit at all — the hogs die because the NODE ran out. Two different killers: the kernel (per-container) vs the kubelet (node-level, QoS-ranked).",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "showPoints": "never", "spanNulls": true },
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "limit (128Mi)" },
+            "properties": [
+              { "id": "custom.fillOpacity", "value": 0 },
+              { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 17 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "container_memory_working_set_bytes{namespace=\"shopnow\", container=\"payment-service\"}",
+          "legendFormat": "Ep1: payment-service working set",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "container_spec_memory_limit_bytes{namespace=\"shopnow\", container=\"payment-service\"}",
+          "legendFormat": "limit (128Mi)",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"eviction-demo\", container!=\"\"})",
+          "legendFormat": "Ep2: hog {{pod}} (no limit)",
+          "refId": "C"
+        }
+      ],
+      "title": "Split View — OOMKilled (Ep1, per-container killer) vs Evicted (Ep2, node-level killer)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["k8s-under-the-hood", "episode-2", "eviction"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "label": "Prometheus",
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "browser",
+  "title": "Episode 2 — Eviction Investigation (OOMKilled vs Evicted)",
+  "uid": "ep02-evict",
+  "version": 1
+}

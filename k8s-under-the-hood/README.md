@@ -64,6 +64,19 @@ make demo-ep01
 # 5. Display Grafana dashboard with the OOM event
 ```
 
+### Run Episode 2 — OOMKilled vs Evicted
+
+```bash
+# One-time: configure the eviction threshold on a worker
+# (see episodes/02-oomkilled-vs-evicted/lab-guide.md section 5)
+
+# Deploy BestEffort memory hogs and trigger a node-pressure eviction
+make demo-ep02
+
+# Delete the eviction-demo workloads (payment-service + lab stay up)
+make cleanup-ep02
+```
+
 ### Clean up the episode (keep lab running)
 
 ```bash
@@ -90,9 +103,9 @@ make teardown
 | Episode | Topic | Status |
 |---------|-------|--------|
 | 1 | What REALLY happens when Kubernetes OOMKills a Pod? | In Progress |
-| 2 | OOMKilled vs Evicted — They Are NOT the Same | Planned |
-| 3 | How do you actually diagnose an OOMKilled Pod? | Planned |
-| 4 | How do you prevent Kubernetes OOMKills? | Planned |
+| 2 | OOMKilled vs Evicted — They Are NOT the Same | In Progress |
+| 3 | How do you actually diagnose an OOMKilled Pod? | Planned — [outline](episodes/03-diagnosing-oomkilled/README.md) |
+| 4 | How do you prevent Kubernetes OOMKills? | Planned — [outline](episodes/04-preventing-oomkills/README.md) |
 
 ### Season 2 — CPU & Resource Behavior
 

@@ -1,4 +1,4 @@
-.PHONY: setup teardown verify demo-ep01 cleanup-ep01 help \
+.PHONY: setup teardown verify demo-ep01 cleanup-ep01 demo-ep02 cleanup-ep02 help \
          tf-init tf-apply tf-destroy \
          templates \
          k3s-install observability-deploy \
@@ -31,6 +31,10 @@ help:
 	@echo "$(YELLOW)Episode 1 - OOMKilled:$(NC)"
 	@echo "  make demo-ep01      - Deploy demo workload and trigger OOMKill"
 	@echo "  make cleanup-ep01   - Delete demo workloads (keep lab running)"
+	@echo ""
+	@echo "$(YELLOW)Episode 2 - OOMKilled vs Evicted:$(NC)"
+	@echo "  make demo-ep02      - Trigger node memory-pressure eviction (needs threshold config)"
+	@echo "  make cleanup-ep02   - Delete eviction-demo workloads (keep lab + payment-service)"
 	@echo ""
 	@echo "$(YELLOW)Utilities:$(NC)"
 	@echo "  make help           - Show this help message"
@@ -221,3 +225,15 @@ cleanup-ep01:
 	bash episodes/01-oom-killed/scripts/cleanup.sh
 	@echo "$(GREEN)✓ Episode 1 cleanup complete$(NC)"
 	@echo "$(YELLOW)Lab is still running. Ready for next episode.$(NC)"
+
+demo-ep02:
+	@echo "$(GREEN)Running Episode 2 - OOMKilled vs Evicted...$(NC)"
+	@echo "$(YELLOW)Prerequisite: eviction threshold configured on a worker$(NC)"
+	@echo "$(YELLOW)(see episodes/02-oomkilled-vs-evicted/lab-guide.md section 5)$(NC)"
+	bash episodes/02-oomkilled-vs-evicted/scripts/demo.sh
+
+cleanup-ep02:
+	@echo "$(GREEN)Cleaning up Episode 2...$(NC)"
+	bash episodes/02-oomkilled-vs-evicted/scripts/cleanup.sh
+	@echo "$(GREEN)✓ Episode 2 cleanup complete$(NC)"
+	@echo "$(YELLOW)Lab still running; payment-service (Episode 1) untouched.$(NC)"

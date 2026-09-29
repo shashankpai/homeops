@@ -1,0 +1,190 @@
+# Episode 2 — Memory Hogs (BestEffort, node-pressure victims)
+#
+# The app is the same stdlib-only Python pattern as Episode 1's
+# payment-service, but the Deployment is deliberately BestEffort:
+# NO requests, NO limits. When the node comes under memory pressure,
+# the kubelet's eviction manager ranks BestEffort pods FIRST to die —
+# the exact opposite of the kernel's per-container OOMKill from Episode 1.
+#
+# QoS class: BestEffort (no resources block at all).
+#
+# Placement: pinned to ONE worker node via nodeSelector so the demo
+# pressures a single node. The __WORKER_NODE__ placeholder is replaced
+# by demo.sh with the chosen worker's real node name before applying:
+#   sed "s/__WORKER_NODE__/$NODE/" manifests/memory-hog.yaml | kubectl apply -f -
+#
+# No Service: the pods are driven via kubectl exec, and eviction doesn't
+# care about Services anyway.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: eviction-demo
+  labels:
+    app.kubernetes.io/part-of: eviction-demo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: memory-hog-code
+  namespace: eviction-demo
+data:
+  hog.py: |
+    #!/usr/bin/env python3
+    """Memory hog — BestEffort eviction-demo victim (Episode 2).
+
+    Same gradual-allocation pattern as Episode 1's payment-service so the
+    node's memory drain is visible across several Prometheus scrape
+    intervals (15s) as the hogs ramp.
+
+    Endpoints:
+      GET  /healthz   liveness target (always 200)
+      GET  /usage     current RSS of this process, in MB
+      POST /allocate?mb=N   allocate N MB gradually and hold it
+      POST /release    stop allocating and drop all held allocations
+    """
+    import gc
+    import os
+    import resource
+    import threading
+    import time
+
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    _held = []
+    _held_lock = threading.Lock()
+    _stop_event = threading.Event()
+
+    # Same pacing as Episode 1: slow enough for Prometheus/cAdvisor to
+    # sample the climb, so the node drain shows up in Grafana.
+    CHUNK_MB = 2
+    CHUNK_INTERVAL_SEC = 2
+
+    def rss_mb():
+        # ru_maxrss is in KiB on Linux
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+
+    def _allocate_gradually(total_mb):
+        allocated = 0
+        while allocated < total_mb and not _stop_event.is_set():
+            chunk = min(CHUNK_MB, total_mb - allocated)
+            with _held_lock:
+                _held.append(bytearray(chunk * 1024 * 1024))
+            allocated += chunk
+            gc.collect()
+            print(f"[hog] +{chunk}MB (so far={allocated}MB, rss={rss_mb():.1f}MB)", flush=True)
+            time.sleep(CHUNK_INTERVAL_SEC)
+
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, code, body):
+            data = body.encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            path = urlparse(self.path).path
+            if path == "/healthz":
+                self._send(200, "ok\n")
+            elif path == "/usage":
+                self._send(200, f"rss_mb={rss_mb():.1f}\n")
+            else:
+                self._send(404, "not found\n")
+
+        def do_POST(self):
+            parsed = urlparse(self.path)
+            if parsed.path == "/allocate":
+                params = parse_qs(parsed.query)
+                try:
+                    mb = int(params.get("mb", ["0"])[0])
+                except ValueError:
+                    self._send(400, "mb must be an integer\n")
+                    return
+                if mb <= 0 or mb > 4096:
+                    self._send(400, "mb must be in 1..4096\n")
+                    return
+                _stop_event.clear()
+                eta_sec = (mb / CHUNK_MB) * CHUNK_INTERVAL_SEC
+                threading.Thread(target=_allocate_gradually, args=(mb,), daemon=True).start()
+                self._send(200, f"allocating {mb}MB in {CHUNK_MB}MB steps every {CHUNK_INTERVAL_SEC}s (~{eta_sec:.0f}s to finish, or evicted before then); rss_mb={rss_mb():.1f}\n")
+            elif parsed.path == "/release":
+                _stop_event.set()
+                with _held_lock:
+                    _held.clear()
+                gc.collect()
+                self._send(200, f"released; rss_mb={rss_mb():.1f}\n")
+            else:
+                self._send(404, "not found\n")
+
+        def log_message(self, fmt, *args):
+            print(f"{self.address_string()} {fmt % args}", flush=True)
+
+    if __name__ == "__main__":
+        port = int(os.environ.get("PORT", "8080"))
+        print(f"memory-hog listening on :{port}", flush=True)
+        ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-hog
+  namespace: eviction-demo
+  labels:
+    app: memory-hog
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: memory-hog
+  template:
+    metadata:
+      labels:
+        app: memory-hog
+    spec:
+      # Pinned to ONE worker so the demo pressures a single node.
+      # __WORKER_NODE__ is substituted by scripts/demo.sh.
+      nodeSelector:
+        kubernetes.io/hostname: __WORKER_NODE__
+      containers:
+        - name: memory-hog
+          image: python:3.12-slim
+          command: ["python", "/app/hog.py"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PORT
+              value: "8080"
+          # BestEffort QoS: NO resources block at all.
+          # No requests to protect it, no limits to kill it —
+          # when the node runs low, the kubelet evicts these FIRST.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: code
+          configMap:
+            name: memory-hog-code
