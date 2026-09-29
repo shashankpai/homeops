@@ -1,8 +1,14 @@
 # Episode 4 — How do you prevent Kubernetes OOMKills?
 
-> **Status:** Skeleton (planned) · Season 1, Episode 04 (season finale)
+> **Status:** In production — full artifact package complete
+> (narration, prevention checklist, lab guide, demo scripts, dashboard, metadata)
 > **Predecessors:** [Episode 1 — the 5-layer OOMKill descent](../../README.md) ·
 > [Episode 3 — the diagnosis runbook](../03-diagnosing-oomkilled/README.md)
+>
+> **Quick demo:** `make demo-ep04` · **Cleanup:** `make cleanup-ep04`
+> **The printable:** [prevention-checklist.md](prevention-checklist.md)
+> **Alert rules:** wired into `lab/observability/prometheus.yaml`
+> (MemoryNearLimit at 90% of limit + OOMKilledRecently)
 
 ## Objective
 

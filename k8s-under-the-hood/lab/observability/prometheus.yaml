@@ -52,6 +52,8 @@ data:
     global:
       scrape_interval: 15s
       evaluation_interval: 15s
+    rule_files:
+      - /etc/prometheus/alerts.yml
     scrape_configs:
       - job_name: prometheus
         static_configs:
@@ -89,6 +91,31 @@ data:
         metrics_path: /metrics/cadvisor
         kubernetes_sd_configs:
           - role: node
+  # Alert rules (Episode 4 + prevention). Loaded via rule_files above.
+  # NOTE: `for: 1m` is demo-friendly; production would typically use 5-10m.
+  alerts.yml: |
+    groups:
+      - name: oom-prevention
+        rules:
+          - alert: MemoryNearLimit
+            expr: |
+              container_memory_working_set_bytes{container!="", container!="POD"}
+                / container_spec_memory_limit_bytes{container!="", container!="POD"}
+                > 0.90
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.pod }} is above 90% of its memory limit"
+              description: "{{ $labels.namespace }}/{{ $labels.pod }} working set is over 90% of its limit for 1m. OOMKill is imminent if it keeps growing."
+          - alert: OOMKilledRecently
+            expr: kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+            for: 0m
+            labels:
+              severity: info
+            annotations:
+              summary: "{{ $labels.pod }} was recently OOMKilled"
+              description: "{{ $labels.namespace }}/{{ $labels.pod }}'s last container termination was OOMKilled. Investigate (see the Episode 3 runbook)."
 ---
 apiVersion: apps/v1
 kind: Deployment

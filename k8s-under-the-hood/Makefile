@@ -1,4 +1,6 @@
-.PHONY: setup teardown verify demo-ep01 cleanup-ep01 demo-ep02 cleanup-ep02 help \
+.PHONY: setup teardown verify \
+         demo-ep01 cleanup-ep01 demo-ep02 cleanup-ep02 \
+         demo-ep03 cleanup-ep03 demo-ep04 cleanup-ep04 help \
          tf-init tf-apply tf-destroy \
          templates \
          k3s-install observability-deploy \
@@ -35,6 +37,14 @@ help:
 	@echo "$(YELLOW)Episode 2 - OOMKilled vs Evicted:$(NC)"
 	@echo "  make demo-ep02      - Trigger node memory-pressure eviction (needs threshold config)"
 	@echo "  make cleanup-ep02   - Delete eviction-demo workloads (keep lab + payment-service)"
+	@echo ""
+	@echo "$(YELLOW)Episode 3 - OOMKill Diagnosis Runbook:$(NC)"
+	@echo "  make demo-ep03      - Stage victims + walk the 4-layer diagnosis runbook"
+	@echo "  make cleanup-ep03   - Delete the CrashLoop contrast pod"
+	@echo ""
+	@echo "$(YELLOW)Episode 4 - OOMKill Prevention (finale):$(NC)"
+	@echo "  make demo-ep04      - The full fix arc + live 90% alert firing"
+	@echo "  make cleanup-ep04   - Delete the right-sized variant"
 	@echo ""
 	@echo "$(YELLOW)Utilities:$(NC)"
 	@echo "  make help           - Show this help message"
@@ -237,3 +247,23 @@ cleanup-ep02:
 	bash episodes/02-oomkilled-vs-evicted/scripts/cleanup.sh
 	@echo "$(GREEN)✓ Episode 2 cleanup complete$(NC)"
 	@echo "$(YELLOW)Lab still running; payment-service (Episode 1) untouched.$(NC)"
+
+demo-ep03:
+	@echo "$(GREEN)Running Episode 3 - OOMKill Diagnosis Runbook...$(NC)"
+	bash episodes/03-diagnosing-oomkilled/scripts/demo.sh
+
+cleanup-ep03:
+	@echo "$(GREEN)Cleaning up Episode 3...$(NC)"
+	bash episodes/03-diagnosing-oomkilled/scripts/cleanup.sh
+	@echo "$(GREEN)✓ Episode 3 cleanup complete$(NC)"
+	@echo "$(YELLOW)Lab still running; payment-service untouched.$(NC)"
+
+demo-ep04:
+	@echo "$(GREEN)Running Episode 4 - OOMKill Prevention (season finale)...$(NC)"
+	bash episodes/04-preventing-oomkills/scripts/demo.sh
+
+cleanup-ep04:
+	@echo "$(GREEN)Cleaning up Episode 4...$(NC)"
+	bash episodes/04-preventing-oomkills/scripts/cleanup.sh
+	@echo "$(GREEN)✓ Episode 4 cleanup complete$(NC)"
+	@echo "$(YELLOW)Lab still running; payment-service untouched.$(NC)"

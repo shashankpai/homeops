@@ -1,0 +1,38 @@
+# Episode 3 — CrashLoop victim (the triage-contrast workload)
+#
+# A pod that starts, prints a line, and exits 1 — over and over.
+# Kubernetes restarts it with exponential backoff: CrashLoopBackOff.
+#
+# Purpose: the FIRST fork in the diagnosis runbook. Before you run a
+# single investigation command, STATUS/RESTARTS/REASON already tell you
+# which family you're in:
+#
+#   OOMKilled        -> container crossed its cgroup limit (kernel)
+#   Evicted          -> node-level pressure (kubelet)         [Episode 2]
+#   CrashLoopBackOff -> the app itself is failing to start   [this pod]
+#
+# The runbook's Step 0 is telling these apart — this pod is the
+# CrashLoopBackOff branch, shown side by side with the OOMKilled
+# payment-service from Episode 1.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: crashloop-demo
+  labels:
+    app.kubernetes.io/part-of: crashloop-demo
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crashy
+  namespace: crashloop-demo
+  labels:
+    app: crashy
+spec:
+  restartPolicy: Always
+  containers:
+    - name: crashy
+      image: busybox:1.36
+      # Fails ~1s after start, every time. Restart backoff: 10s, 20s, 40s...
+      command: ["sh", "-c", "echo 'starting up... connecting to dependency... FAILED: exit 1' && sleep 1 && exit 1"]

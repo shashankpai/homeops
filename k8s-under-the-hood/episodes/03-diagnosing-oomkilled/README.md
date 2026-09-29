@@ -1,8 +1,12 @@
 # Episode 3 — How do you actually diagnose an OOMKilled Pod?
 
-> **Status:** Skeleton (planned) · Season 1, Episode 03
+> **Status:** In production — full artifact package complete
+> (narration, runbook, lab guide, demo scripts, dashboard, metadata)
 > **Predecessors:** [Episode 1 — the 5-layer OOMKill descent](../../README.md) ·
 > [Episode 2 — OOMKilled vs Evicted](../02-oomkilled-vs-evicted/lab-guide.md)
+>
+> **Quick demo:** `make demo-ep03` · **Cleanup:** `make cleanup-ep03`
+> **The printable:** [runbook.md](runbook.md)
 
 ## Objective
 

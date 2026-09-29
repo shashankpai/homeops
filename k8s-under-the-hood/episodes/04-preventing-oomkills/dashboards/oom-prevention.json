@@ -1,0 +1,192 @@
+{
+  "__inputs": [],
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "The full-circle money shot: the SAME load (mb=200) on two pods. The bad pod (128Mi limit) climbs to its ceiling and dies; the sized pod (512Mi, Guaranteed) climbs to ~225Mi and STAYS. Same load, two fates — that's the difference between guessing and engineering.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": true },
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "bad limit (128Mi)" },
+            "properties": [
+              { "id": "custom.fillOpacity", "value": 0 },
+              { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "sized limit (512Mi)" },
+            "properties": [
+              { "id": "custom.fillOpacity", "value": 0 },
+              { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "container_memory_working_set_bytes{namespace=\"shopnow\", container=\"payment-service\"}",
+          "legendFormat": "bad pod working set",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "container_spec_memory_limit_bytes{namespace=\"shopnow\", container=\"payment-service\"}",
+          "legendFormat": "bad limit (128Mi)",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "container_memory_working_set_bytes{namespace=\"shopnow\", container=\"payment-sized\"}",
+          "legendFormat": "sized pod working set",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "container_spec_memory_limit_bytes{namespace=\"shopnow\", container=\"payment-sized\"}",
+          "legendFormat": "sized limit (512Mi)",
+          "refId": "D"
+        }
+      ],
+      "title": "Same Load, Two Fates: the 128Mi victim vs the 512Mi fix",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Percent of limit on the sized pod. Crosses 90% (red zone) exactly where the MemoryNearLimit alert fires — BEFORE the kernel. The early-warning line is the whole point of prevention: buy human time, not pod lives.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 25, "lineWidth": 2, "showPoints": "never" },
+          "max": 110,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 70 }, { "color": "red", "value": 90 } ] },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "hidden" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "100 * container_memory_working_set_bytes{namespace=\"shopnow\", container=\"payment-sized\"} / container_spec_memory_limit_bytes{namespace=\"shopnow\", container=\"payment-sized\"}",
+          "legendFormat": "% of limit (sized pod)",
+          "refId": "A"
+        }
+      ],
+      "title": "Sized Pod: % of Limit — 90% = alert fires before the kernel",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "The fix decider from Episode 3, now the prevention fork: linear positive = LEAK (fix the app); falls to zero = plateau (right-size). Watch it fall to ~0 after the /release app-fix demo.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 30, "lineWidth": 2, "showPoints": "never", "spanNulls": true },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 9 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "hidden" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "deriv(container_memory_working_set_bytes{namespace=\"shopnow\", container=\"payment-service\"}[5m])",
+          "legendFormat": "bad pod growth rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Leak Signature (deriv, 5m) — the fix fork",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "The anti-pattern quantified: seconds until the bad pod dies at its current growth rate (clamped to a minimum 1B/s so a flat line doesn't divide by zero). Read it BEFORE proposing 'raise the limit': doubling the limit on a leak doubles the runway, not the fix.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2, "showPoints": "never", "spanNulls": true },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 9 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "hidden" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "(container_spec_memory_limit_bytes{namespace=\"shopnow\", container=\"payment-service\"} - container_memory_working_set_bytes{namespace=\"shopnow\", container=\"payment-service\"}) / clamp_min(deriv(container_memory_working_set_bytes{namespace=\"shopnow\", container=\"payment-service\"}[10m]), 1)",
+          "legendFormat": "time-to-limit (s)",
+          "refId": "A"
+        }
+      ],
+      "title": "Time-to-Limit (the 'raise the limit' math)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "The survival proof, quantified: the bad pod's restart counter steps up with each OOMKill; the sized pod's stays FLAT under the same load. Zero restarts = the fix.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never", "stepAfter": true },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 9 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "kube_pod_container_status_restarts_total{namespace=\"shopnow\"}",
+          "legendFormat": "restarts ({{pod}})",
+          "refId": "A"
+        }
+      ],
+      "title": "Restart Counters — the survival proof",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["k8s-under-the-hood", "episode-4", "prevention"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "label": "Prometheus",
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-30m", "to": "now" },
+  "timezone": "browser",
+  "title": "Episode 4 — OOMKill Prevention",
+  "uid": "ep04-prevent",
+  "version": 1
+}

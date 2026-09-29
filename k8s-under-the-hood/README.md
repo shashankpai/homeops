@@ -77,6 +77,27 @@ make demo-ep02
 make cleanup-ep02
 ```
 
+### Run Episode 3 — The Diagnosis Runbook
+
+```bash
+# Stage both victims (OOMKilled + CrashLoop) and walk the 4-layer runbook
+make demo-ep03
+
+# Delete the CrashLoop contrast pod (payment-service stays up)
+make cleanup-ep03
+```
+
+### Run Episode 4 — Prevention (Season Finale)
+
+```bash
+# The full fix arc: kill -> fork -> anti-pattern -> app fix -> right-size
+# -> 90% alert firing live. Alert rules ship with the lab's Prometheus.
+make demo-ep04
+
+# Delete the right-sized variant (payment-service stays up)
+make cleanup-ep04
+```
+
 ### Clean up the episode (keep lab running)
 
 ```bash
@@ -104,8 +125,8 @@ make teardown
 |---------|-------|--------|
 | 1 | What REALLY happens when Kubernetes OOMKills a Pod? | In Progress |
 | 2 | OOMKilled vs Evicted — They Are NOT the Same | In Progress |
-| 3 | How do you actually diagnose an OOMKilled Pod? | Planned — [outline](episodes/03-diagnosing-oomkilled/README.md) |
-| 4 | How do you prevent Kubernetes OOMKills? | Planned — [outline](episodes/04-preventing-oomkills/README.md) |
+| 3 | How do you actually diagnose an OOMKilled Pod? | In Progress — [runbook](episodes/03-diagnosing-oomkilled/runbook.md) |
+| 4 | How do you prevent Kubernetes OOMKills? | In Progress — [checklist](episodes/04-preventing-oomkills/prevention-checklist.md) |
 
 ### Season 2 — CPU & Resource Behavior
 
