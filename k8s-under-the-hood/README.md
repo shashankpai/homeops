@@ -123,6 +123,9 @@ make teardown
 | 9 | Kubernetes Probes — how a healthy container gets restarted | Planned |
 | 10 | Pod Pending — why Kubernetes refuses to schedule your Pod | Planned |
 
+> Beyond Season 3: candidate future seasons (networking, storage, control
+> plane, failure cascades) are captured in [ROADMAP.md](ROADMAP.md).
+
 ---
 
 ## Lab Architecture
