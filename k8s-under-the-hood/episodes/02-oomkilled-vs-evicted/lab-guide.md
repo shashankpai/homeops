@@ -379,16 +379,89 @@ log — the surest proof these are two different mechanisms.
 
 ## 12. Metrics: Watching It Happen
 
-The dedicated observability phase. In Grafana, watch the dashboard during
-the trigger (Section 8) — screen-record it like Episode 1's sawtooth:
+The dedicated observability phase. The dashboard
+("Episode 2 — Eviction Investigation", uid `ep02-evict`) has five panels.
+Here is each one — what it shows, the query behind it, how it works, and
+WHEN to show it in the demo:
 
-| Panel | What you see |
-|---|---|
-| **Node Memory Available vs Threshold** | the drain crossing the red 1Gi line — the cliff moment |
-| **MemoryPressure condition** | flips to 1 as the threshold crosses |
-| **Pod Status: Evicted/Failed** | the eviction appearing, pod by pod |
-| **QoS Lens** | hog memory climbing with no limit line; payment-service riding through |
-| **Split View** | Ep 1's sawtooth (container vs limit) beside Ep 2's node drain — two killers, one screen |
+### Panel 1 — Node Memory Available vs Eviction Threshold (the drain)
+
+```promql
+node_memory_MemAvailable_bytes
+1024 * 1024 * 1024        # red dashed line: the configured 1Gi threshold
+```
+
+**How it works:** node-exporter reads `MemAvailable` from `/proc/meminfo` on
+every node — the same number the kubelet's eviction manager computes for its
+`memory.available` signal. The red line is the threshold we configured in
+Section 5. **When the blue line crosses the red line, eviction fires.**
+
+**Show it:** Section 7 (baseline — the gap above the line), Section 8
+(the drain), Section 9 (the crossing = the cliff moment). Narration Phases
+4-6. This is the episode's signature graph — screen-record the whole drain.
+
+### Panel 2 — Node Condition: MemoryPressure
+
+```promql
+kube_node_status_condition{condition="MemoryPressure", status="true"}
+```
+
+**How it works:** kube-state-metrics exposes node conditions as 0/1. The
+kubelet sets the condition when the threshold crosses — and it stays `1` for
+~5 minutes (`evictionPressureTransitionPeriod`) even after the hogs' memory
+is freed. During that window the kubelet rejects new BestEffort pods at
+admission (the churn loop from Section 9).
+
+**Show it:** Section 9 (flips to 1 at the crossing), Section 10 (still True
+during the investigation), Section 14 cleanup (flips back to 0 — the
+full-circle closing shot). Narration Phases 6-7.
+
+### Panel 3 — Pod Status: Evicted / Failed
+
+```promql
+kube_pod_status_reason{namespace="eviction-demo", reason="Evicted"}
+kube_pod_status_phase{namespace="eviction-demo", phase="Failed"}
+```
+
+**How it works:** kube-state-metrics maps `pod.status.reason` and
+`pod.status.phase` to 0/1 series. ONE line steps to 1 — the ranking kill.
+The rest of the Evicted pile steps up in a burst — the admission rejections
+across the 5-minute window. Note what's missing: no restart counter. Evicted
+pods don't restart — they get replaced.
+
+**Show it:** Section 9 (the eviction appearing), Section 10 (the corpse
+pile). Narration Phase 7 [11:15].
+
+### Panel 4 — QoS Lens: Who Dies First and Why
+
+```promql
+sum by (namespace) (container_memory_working_set_bytes{namespace=~"eviction-demo|shopnow", container!=""})
+```
+
+**How it works:** cAdvisor reports per-container working set; summed by
+namespace it becomes the two contenders. `eviction-demo` climbs into the
+gigabytes with NO ceiling (BestEffort — no limit line to hit);
+`shopnow` stays flat at ~30MB (Burstable, usage below request). This panel
+IS the ranking, visualized.
+
+**Show it:** Section 8 (climbing during the drain), Section 10 (the QoS
+post-mortem). Narration Phase 5 [7:30], Phase 7 [11:45], Phase 8.
+
+### Panel 5 — Split View: OOMKilled (Ep1) vs Evicted (Ep2)
+
+```promql
+container_memory_working_set_bytes{namespace="shopnow", container="payment-service"}
+container_spec_memory_limit_bytes{namespace="shopnow", container="payment-service"}   # red dashed 128Mi
+sum by (pod) (container_memory_working_set_bytes{namespace="eviction-demo", container!=""})
+```
+
+**How it works:** Episode 1's story (working set climbing its 128Mi limit —
+the sawtooth) beside Episode 2's (hogs climbing with no limit at all). Two
+killers, one screen. It lights up fully when Section 13 re-triggers the
+OOMKill.
+
+**Show it:** Section 13 (the money shot — Step 7). Narration Phase 7
+[12:00] sets it up, Phase 10 pays it off.
 
 In Prometheus (http://192.168.1.81:30900), the full query set is in
 `promql/queries.md`. The three essentials:

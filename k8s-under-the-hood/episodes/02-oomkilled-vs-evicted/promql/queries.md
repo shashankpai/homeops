@@ -18,9 +18,11 @@ node_memory_MemAvailable_bytes{instance=~"<worker>.*"}
 
 This is `memory.available` — the eviction signal. Watch it fall as the hogs
 ramp. The kubelet compares THIS number against its eviction threshold
-(`memory.available<1Gi` in our configured worker, default `<100Mi` otherwise).
-When it crosses, eviction fires. This is the mirror image of Episode 1's
-container working-set climb toward its limit.
+(`memory.available<1Gi` on the configured target worker — lab-guide §5).
+Note: stock K3s has NO memory threshold at all (only disk signals) — without
+Section 5 the kubelet would never evict on memory pressure. When the number
+crosses the threshold, eviction fires. This is the mirror image of Episode
+1's container working-set climb toward its limit.
 
 ### 2. The same graph with the eviction threshold as a line
 
@@ -70,7 +72,9 @@ kube_pod_status_phase{namespace="eviction-demo", phase="Failed"}
 
 Contrast with Episode 1: the OOMKilled pod stayed `Running` (only its
 RESTARTS counter incremented). The evicted pod goes `Failed` and is deleted
-from the node — the Deployment must recreate it elsewhere.
+from the node — the Deployment recreates it, but the hogs are pinned to the
+pressured node via nodeSelector, so replacements bounce off kubelet
+admission during the ~5m pressure window (the churn loop).
 
 ### 6. Node condition: MemoryPressure
 
@@ -78,10 +82,10 @@ from the node — the Deployment must recreate it elsewhere.
 kube_node_status_condition{condition="MemoryPressure", status="true"}
 ```
 
-`1` = the node is under memory pressure. This appears when the threshold
-crosses, before/during eviction, and clears after the hogs' memory is freed.
-The scheduler also sees this state — rescheduled pods avoid the pressured
-node.
+`1` = the node is under memory pressure. Appears when the threshold crosses;
+stays true for ~5 minutes (`evictionPressureTransitionPeriod`) even after
+the hogs' memory is freed — during that window the kubelet rejects new
+BestEffort pods at admission (the churn loop), then the condition clears.
 
 ---
 
@@ -153,10 +157,12 @@ kube_node_status_condition{condition="MemoryPressure"}
 
 ## Panel-to-story mapping
 
-| Query | Narration phase | Story beat |
-|---|---|---|
-| 1, 2 | 4, 5 | Baseline + the drain toward the threshold line |
-| 3 | 5 | Where the memory is going (hogs, no limit line) |
-| 4, 5, 6 | 6, 7 | The eviction + MemoryPressure flipping true |
-| 7, 8 | 7, 8 | The QoS ranking — who dies first and why |
-| 9, 10 | 7 | Side-by-side: OOMKilled vs Evicted |
+Dashboard panels (lab-guide §12 has the full panel-by-panel reference):
+
+| Dashboard panel | Queries | Demo step (lab-guide) | Narration phase | Story beat |
+|---|---|---|---|---|
+| 1 — Mem Available vs Threshold | 1, 2 | §7 baseline, §8 trigger, §9 crossing | 4, 5, 6 | The drain toward the red line — the cliff moment |
+| 2 — MemoryPressure condition | 6 | §9, §10, §14 cleanup | 6, 7 | Flips to 1 at crossing; ~5m window; clears at cleanup |
+| 3 — Pod Status: Evicted/Failed | 4, 5 | §9, §10 | 6, 7 | The ranking kill + the admission-rejection pile |
+| 4 — QoS Lens | 3, 8 | §8, §10 | 5, 7, 8 | Hogs climb with no ceiling; payment-service rides through |
+| 5 — Split View | 9, 10 | §13 money shot | 7 setup, 10 payoff | Ep1 sawtooth vs Ep2 no-limit — two killers, one screen |
