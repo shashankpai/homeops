@@ -47,7 +47,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "description": "1 = node is under MemoryPressure. Flips true when the threshold crosses, clears after the evicted hogs' memory is freed. The scheduler sees this too — rescheduled pods avoid the pressured node.",
+      "description": "1 = node is under MemoryPressure. Flips true when the threshold crosses; stays true for ~5m (evictionPressureTransitionPeriod) even after the hogs' memory is freed — during that window the kubelet rejects new BestEffort pods at admission (they return as Failed/Evicted 'Pod was rejected' corpses). Clears once the transition period expires.",
       "fieldConfig": {
         "defaults": {
           "custom": { "drawStyle": "line", "fillOpacity": 40, "lineWidth": 2, "showPoints": "always", "spanNulls": true },

@@ -72,6 +72,10 @@ SPLIT SCREEN
   then the hog manifest — the resources block is literally absent
 - Slow zoom + highlight on the empty space where resources would be
 - "The kernel will never kill these. There's no limit to cross."
+- Then the hog SOURCE shot (narration [4:25]): scroll the ConfigMap's
+  `hog.py` — the four endpoints (/healthz, /usage, /allocate?mb=N,
+  /release), highlight the 2MB-chunk / 2s-interval pacing loop and the
+  `_held` list. Caption: "gradual on purpose — Prometheus scrapes every 15s"
 
 ### Sequence D — The Drain (trigger, 6:00–8:00)
 
@@ -86,30 +90,45 @@ SPLIT SCREEN
 
 ```
 kubectl get pods -n eviction-demo -w
-memory-hog-...-7tq1   0/1   Evicted   0   9m
+memory-hog-...-dr7jj   0/1   Evicted   0   14m
+memory-hog-...-q92f7   1/1   Running   0   14m
+memory-hog-...-zj4xg   1/1   Running   0   14m
 ```
 
-- Freeze on `Evicted` — hold 3 seconds
+- Freeze on `Evicted` — hold 3 seconds. Call out the surprise: only ONE
+  of the three died — the kubelet evicts the minimum it needs (triage,
+  not a massacre)
 - Then the event, full screen:
 
 ```
 The node was low on resource: memory.
-Threshold quantity: 1Gi, available: 998Mi.
+Threshold quantity: 1Gi, available: 1018844Ki.
+Container memory-hog was using 704220Ki, request is 0,
+has larger consumption of memory.
 ```
 
 - Read it aloud while each phrase highlights in sequence:
-  THE NODE → MEMORY → 1Gi → 998Mi
-- "It names the killer, the weapon, the threshold, and the evidence in one line."
+  THE NODE → MEMORY → 1Gi → 1018844Ki → "using 704220Ki, request is 0"
+- "It names the killer, the weapon, the threshold, AND the ranking math
+  in one message."
+- Then the churn loop: scroll the ~19 'Pod was rejected: The node had
+  condition: [MemoryPressure]' events — the Deployment's replacements
+  bouncing off the kubelet's front door for ~5 minutes
 
 ### Sequence F — The Metrics Replay (observability, 10:00–12:30)
 
 Screen-recorded during the trigger phase, replayed with narration:
 1. Panel 1: the crossing (drain hits red line) — the cliff moment
-2. Panel 2: MemoryPressure flipping 0→1 at the crossing
-3. Panel 3: three hog lines stepping to Evicted, one at a time —
+2. Panel 2: MemoryPressure flipping 0→1 at the crossing — and staying 1
+   for ~5m (evictionPressureTransitionPeriod) while the churn loop runs
+3. Panel 3: ONE hog line steps to Evicted (the ranking kill), then the
+   rest of the Evicted pile steps up in a burst (admission rejections) —
    "no restart counter climbing — evicted pods don't restart, they get replaced"
 4. Panel 4 QoS lens: eviction-demo climbing with no ceiling vs
    shopnow flat — "one died entirely, the other didn't even notice"
+5. Panel 5 Split View: Ep1 sawtooth (payment-service vs 128Mi limit)
+   beside Ep2 hogs (no limit) — "two killers, one screen"; lights up
+   fully when the OOMKill is re-triggered in Phase 10
 
 ### Sequence G — The Ranking Ladder (8/12:30–15:00)
 
@@ -144,7 +163,7 @@ dmesg                        journalctl -u k3s-agent
 
 ### Sequence I — The Comparison Table (money shot, 17:00–18:30)
 
-- Both corpses fresh in two terminals (restarts=4 Running vs Evicted)
+- Both corpses fresh in two terminals (restarts=9 Running vs Evicted)
 - Then the full table (8 rows) full-frame, built row by row
 - "Every row is a clue you collected live. Screenshot it."
 
@@ -156,11 +175,11 @@ dmesg                        journalctl -u k3s-agent
 |---|---|---|---|
 | 1 Hook | 0:00–1:00 | Seq A | Two terminals, two corpses, freeze frames |
 | 2 Theory | 1:00–3:30 | Seq B | Two-actor diagram, eviction signals, defaults |
-| 3 Setup | 3:30–5:00 | Seq C + terminal | Deploy, manifest with nothing in it, threshold config |
+| 3 Setup | 3:30–5:00 | Seq C + terminal | Deploy, manifest with nothing in it, hog source walkthrough, threshold config |
 | 4 Baseline | 5:00–6:00 | Terminal + Grafana | Conditions: False, the gap above the red line |
 | 5 Trigger | 6:00–8:00 | Seq D | Time-lapse drain, mirror-image inset |
 | 6 Eviction | 8:00–10:00 | Seq E | -w output, freeze on Evicted, the one-line event |
-| 7 Metrics | 10:00–12:30 | Seq F | Grafana replay: crossing, condition flip, reasons, QoS lens |
+| 7 Metrics | 10:00–12:30 | Seq F | Grafana replay: crossing, condition flip, reasons, QoS lens, split view |
 | 8 Ranking | 12:30–15:00 | Seq G | The ladder, the negative math, the QoS asymmetry |
 | 9 Node | 15:00–17:00 | Seq H | config.yaml, journalctl, two-logs split |
 | 10 Table | 17:00–18:30 | Seq I | Fresh corpses + table row build |

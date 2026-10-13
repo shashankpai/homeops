@@ -146,6 +146,14 @@ Here's the hog manifest — and I want you to notice what's NOT in it:
 
 No resources block. At all. No requests, no limits. That makes these pods BestEffort — the kubelet's eviction appetizer. The kernel will never OOMKill them, because there's no limit to cross. The only thing that can kill a hog... is the node running out.
 
+[4:25 — show hog source, ConfigMap section]
+
+And what IS this hog, actually? It's the same app pattern as Episode 1's payment-service: a stdlib-only Python HTTP server — no dependencies, no image build. The code ships as a ConfigMap mounted into a stock python image, running as non-root with a read-only filesystem. One command reproduces the whole thing.
+
+It has four endpoints. /healthz — the liveness probe target. /usage — reports the process's own RSS. /release — drops everything it holds. And the one we care about: POST /allocate?mb=N. That grows the process's memory by N megabytes — but GRADUALLY: two-megabyte chunks, one every two seconds, each chunk held in a list so it stays allocated.
+
+Why gradual? Same reason as Episode 1: Prometheus scrapes every fifteen seconds. If the hog ate everything instantly, the drain would be a single data point — a vertical line nobody can read. Two megs every two seconds means the fall in Grafana is smooth, scrape by scrape, and you watch the crime happen in real time.
+
 [4:35]
 
 One more setup detail — on the target worker, we've configured the kubelet's eviction threshold:
@@ -219,7 +227,7 @@ allocating 256MB in 2MB steps every 2s (~256s to finish, or evicted before then)
 
 [6:45 — show Grafana]
 
-Now watch the dashboard. The blue line — node memory available — starts its long fall. Three hogs, about a megabyte per second combined. This is the mirror image of Episode 1's graph: back then we watched a CONTAINER's working set climb toward its limit. Now we're watching the NODE's available memory fall toward the kubelet's threshold.
+Now watch the dashboard. The blue line — node memory available — starts its long fall. A megabyte per second per hog, three combined. This is the mirror image of Episode 1's graph: back then we watched a CONTAINER's working set climb toward its limit. Now we're watching the NODE's available memory fall toward the kubelet's threshold.
 
 [7:30]
 
@@ -310,6 +318,10 @@ Third panel: pod status reason. And the panel tells the true story: ONE line ste
 [11:45 — show Grafana, Panel 4]
 
 And the QoS lens — my favorite panel. eviction-demo climbing into the gigabytes with no ceiling in sight. shopnow, the payment-service, flat at thirty megs. Two workloads, one node, one pressure event. One died entirely. The other didn't even notice. That panel IS the lesson of this episode.
+
+[12:00 — show Grafana, Panel 5]
+
+And the bottom panel — the split view, which is where this whole episode is going. Left series: Episode 1's payment-service, working set climbing its 128-meg limit — the sawtooth: kernel kills it, restart, climb again. Right series: today's hogs, climbing with NO limit line at all — because nothing per-container will ever kill them. Two killers, one screen. When we re-trigger the OOMKill at the end of the episode, this panel lights up with both deaths side by side — that's the money shot.
 
 [12:15]
 

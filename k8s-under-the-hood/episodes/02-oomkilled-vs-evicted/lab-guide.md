@@ -71,13 +71,13 @@ By the end of this episode you can:
 
 ┌──────────────────────────┐        ┌──────────────────────────┐
 │  TARGET WORKER (one of   │        │  OTHER WORKER             │
-│  the agents — demo.sh    │        │  - untouched control      │
-│  picks it dynamically)   │        │  - evicted hogs may       │
-│                          │        │    reschedule here       │
-│  - 3× memory-hog         │        └──────────────────────────┘
-│    (BestEffort, no       │
-│     requests/limits)     │
-│  - memory.available      │
+│  the workers — demo.sh   │        │  - untouched by the demo  │
+│  picks it dynamically)   │        │    (hogs are PINNED to    │
+│                          │        │     the target node via   │
+│  - 3× memory-hog         │        │     nodeSelector — their  │
+│    (BestEffort, no       │        │     replacements can't    │
+│     requests/limits)     │        │     land here)            │
+│  - memory.available      │        └──────────────────────────┘
 │    drained below the     │
 │    eviction threshold    │
 │  - kubelet evicts hogs   │
@@ -191,6 +191,25 @@ kubectl get pods -n eviction-demo -o custom-columns=NAME:.metadata.name,NODE:.sp
 Note in the output: **QOS: BestEffort**. No requests, no limits. The kernel
 will never OOMKill these pods per-container — there is no limit to cross.
 Only the node running out can kill them, via the kubelet.
+
+### What the hog actually does
+
+Same app pattern as Episode 1's payment-service — a stdlib-only Python HTTP
+server shipped as a ConfigMap mounted into a stock `python:3.12-slim` image
+(nothing built, fully reproducible), running as non-root with a read-only
+filesystem. Four endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /healthz` | liveness/readiness probe target (always 200) |
+| `GET /usage` | current RSS of the process, in MB |
+| `POST /allocate?mb=N` | grow memory by N MB — gradually: 2MB chunks, one every 2s, each held in a list so it stays allocated |
+| `POST /release` | stop allocating and drop everything held |
+
+**Why gradual pacing?** Prometheus scrapes every 15s. An instant allocation
+would be one data point — a vertical line nobody can read. 2MB every 2s
+makes the node's memory drain smooth in Grafana, scrape by scrape, so the
+crime is visible in real time. Same reason as Episode 1's pacing.
 
 ## 7. Baseline: The Node Is Healthy
 
@@ -421,8 +440,11 @@ configured (configz command in Section 5 — `ps aux` will NOT show it; the
 kubelet runs inside the k3s agent process), and whether the node is truly
 filling (`kubectl top node $NODE`).
 
-**Hogs rescheduled onto the other worker and pressure it too** — demo.sh
-stops ramping at first eviction; run `make cleanup-ep02` if in doubt.
+**Replacement hogs pile up as Failed/Evicted after the first eviction** —
+expected: they're pinned to the pressured node via nodeSelector and get
+rejected at kubelet admission during the ~5m
+`evictionPressureTransitionPeriod` window (Section 9, Surprise #2). They
+run normally once the condition clears. Run `make cleanup-ep02` if in doubt.
 
 **Node became unresponsive** — rare (kubelet should evict before system OOM).
 Run cleanup from the controller; if the node is unreachable, reboot the VM in

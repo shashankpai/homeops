@@ -5,11 +5,11 @@
 |---|---|---|---|---|
 | 1 — Intro / Hook | 0:00–1:00 | §1 Episode Overview (table) | — (uses existing/prior state) | `kubectl get pods` two corpses |
 | 2 — Theory: The Two Actors | 1:00–3:30 | §2 Learning Objectives, §1 comparison table | — | Eviction signals diagram |
-| 3 — Setup: Deploy the Victims | 3:30–5:00 | §4 Prerequisites, §5 Eviction Threshold, §6 Deploy Hogs | demo.sh STEP 1–2 | `manifests/memory-hog.yaml`, `/etc/rancher/k3s/config.yaml` |
+| 3 — Setup: Deploy the Victims | 3:30–5:00 | §4 Prerequisites, §5 Eviction Threshold, §6 Deploy Hogs (incl. "What the hog actually does") | demo.sh STEP 1–2 | `manifests/memory-hog.yaml` (hog.py ConfigMap), `/etc/rancher/k3s/config.yaml` |
 | 4 — Baseline | 5:00–6:00 | §7 Baseline | demo.sh STEP 3 | `kubectl describe node` conditions |
 | 5 — Trigger: Fill the Node | 6:00–8:00 | §8 Trigger | demo.sh STEP 4 | `/allocate` ramp, Grafana Panel 1 |
 | 6 — The Eviction | 8:00–10:00 | §9 The Eviction | demo.sh STEP 5 | `-w` output, eviction event |
-| 7 — Metrics Replay | 10:00–12:30 | §12 Metrics | (recorded during STEP 4) | Dashboard panels 1–4, `promql/queries.md` |
+| 7 — Metrics Replay | 10:00–12:30 | §12 Metrics | (recorded during STEP 4) | Dashboard panels 1–5, `promql/queries.md` |
 | 8 — The Ranking | 12:30–15:00 | §10 Investigation (QoS post-mortem) | demo.sh STEP 6 | Ranking diagram, QoS custom-columns |
 | 9 — On the Node | 15:00–17:00 | §11 On the Node | (manual ssh segment) | `journalctl`, config.yaml, dmesg contrast |
 | 10 — Comparison Table | 17:00–18:30 | §13 The Comparison Table | demo.sh STEP 7 | Fresh OOMKill re-trigger + both corpses |
@@ -24,9 +24,13 @@ The heart of the episode. Requirements while recording:
 - `kubectl get pods -n eviction-demo -w` visible in a second terminal
 
 ### The eviction (Phase 6 → STEP 5)
-- Freeze on the first `Evicted` status
+- Freeze on the first `Evicted` status — and call out that only ONE of the
+  three hogs died (the kubelet evicts the minimum it needs)
 - The event line ("node was low on resource") is the evidence peak —
-  read it aloud, highlight phrase by phrase
+  read it aloud, highlight phrase by phrase (it includes the ranking math:
+  "using 704220Ki, request is 0")
+- Then the churn loop: ~19 "Pod was rejected: The node had condition:
+  [MemoryPressure]" events over the ~5m transition window
 
 ### The side-by-side (Phase 10 → STEP 7)
 - demo.sh re-triggers payment-service's OOMKill (~3–4 min ramp)
