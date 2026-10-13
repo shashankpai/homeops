@@ -126,12 +126,32 @@ kubectl get --raw /api/v1/nodes/192.168.1.82/proxy/configz \
 
 Without a `memory.available` threshold the kubelet will never evict on memory
 pressure — the node would march all the way to a system-level OOM instead.
-(Upstream kubeadm clusters default to `memory.available<100Mi`; K3s overrides
-that whole map with its disk-only defaults.)
 
-For the demo we set the threshold to **1Gi** on the target worker: on a 4GB
-worker we only need to fill ~2GB, which is comfortably short of destabilizing
-the node.
+### What `memory.available` is — and how other clusters ship it
+
+`memory.available` is the kubelet's eviction signal for node memory — and it
+is NOT what `free` reports. The kubelet derives it from cgroupfs:
+`node capacity − Σ container working sets`. Working set excludes reclaimable
+page cache (`inactive_file`), because the kernel can take that back under
+pressure. It is the kubelet's own gauge of real headroom — the node-level
+counterpart of Episode 1's container working set. Crossing the threshold sets
+the `MemoryPressure` node condition and triggers eviction.
+
+| Platform | `memory.available` threshold | Where it's set |
+|---|---|---|
+| Upstream kubelet default | `100Mi` | applies only if NO threshold is overridden — changing one zeroes the others unless `mergeDefaultEvictionSettings: true` |
+| kubeadm | `100Mi` | upstream default, via `/var/lib/kubelet/config.yaml` |
+| EKS | `100Mi` | AMI `bootstrap.sh` → `/etc/kubernetes/kubelet/kubelet-config.json` |
+| AKS | `750Mi` pre-1.29, `100Mi` since | managed kubelet config (customizable in preview) |
+| GKE | `100Mi` | managed kubelet config (+ large `kubeReserved`) |
+| **K3s** | **none** | its disk-only `eviction-hard` override wipes the memory default — hence this section |
+
+For the demo we set the threshold to **1Gi** on the target worker — not the
+upstream 100Mi — for headroom: at 100Mi the eviction fires when the node is
+nearly dead, while 1Gi triggers while the node is still responsive (on a 4GB
+worker we only need to fill ~2GB), the gap on the Grafana graph is big enough
+to read, and freeing one hog (~700MB) is enough to recover above the
+threshold.
 
 > This step is **reversible** — Section 14 shows how to restore K3s's default.
 
@@ -392,9 +412,11 @@ node_memory_MemAvailable_bytes
 ```
 
 **How it works:** node-exporter reads `MemAvailable` from `/proc/meminfo` on
-every node — the same number the kubelet's eviction manager computes for its
-`memory.available` signal. The red line is the threshold we configured in
-Section 5. **When the blue line crosses the red line, eviction fires.**
+every node — a close proxy for the kubelet's `memory.available` signal (the
+kubelet computes it as node capacity minus container working sets from
+cgroupfs, excluding reclaimable page cache — not `/proc/meminfo`; see
+Section 5). The red line is the threshold we configured in Section 5.
+**When the blue line crosses the red line, eviction fires.**
 
 **Show it:** Section 7 (baseline — the gap above the line), Section 8
 (the drain), Section 9 (the crossing = the cliff moment). Narration Phases

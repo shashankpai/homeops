@@ -76,6 +76,12 @@ Each signal has thresholds. On an upstream cluster, the defaults look like this:
 
 Meaning: if available memory on this node drops below 100 megabytes, the kubelet doesn't ask permission. It starts deleting pods until the node recovers.
 
+[1:50]
+
+One thing to be precise about: what IS "available memory" to the kubelet? Not what `free` says. The kubelet computes it itself: node capacity, minus the working set of every container on the node — straight from the cgroups. Working set excludes reclaimable page cache, because the kernel can always take that back under pressure. So memory.available is the kubelet's own gauge of the node's REAL headroom — the node-level counterpart of Episode 1's container working set.
+
+And every major platform ships a memory threshold out of the box. Kubeadm, EKS, GKE: 100 megs. AKS: 750 megs before 1.29, 100 megs since. They all watch this signal. K3s is the odd one out — and we verified that live, right here.
+
 [1:55 — show terminal]
 
 But here's a K3s surprise we verified live on this cluster. Ask the kubelet what it's actually watching:
@@ -172,6 +178,8 @@ kubelet-arg:
 [4:55]
 
 We set it to 1 gig — and notice, we didn't RAISE anything, because on K3s there is no memory threshold by default. We ADDED it. Without this line the kubelet would never evict on memory pressure — the node would just die a system-level OOM death. And notice what this IS: kubelet configuration. A file. Not an API object. Remember that for later.
+
+Why one gig and not the upstream 100 megs? Headroom. At 100 megs, eviction fires when the node is already on its deathbed. For a demo we want the node alive and responsive on camera — one gig triggers while there's still air in the room, and the gap between the blue line and the red line is big enough to read on the graph.
 
 ---
 
