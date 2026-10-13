@@ -7,6 +7,15 @@
 
 **Quick demo:** `make demo-ep02` (guided, interactive) · **Cleanup:** `make cleanup-ep02`
 
+**Two ways to run this demo:**
+
+- **Guided** — `make demo-ep02`: the script walks every step with pauses
+  between them (good for a first pass; every command is printed as it runs)
+- **Manual, phase by phase** — follow Sections 5–14 below and run each
+  command by hand. Better for recording: you control the camera timing at
+  every step, pause to explain, and can re-take any phase without rerunning
+  the whole script. Every command the script runs is in this guide.
+
 ---
 
 ## Table of Contents
@@ -298,6 +307,15 @@ The first event names the killer, the signal, the threshold, AND the ranking
 evidence ("using 704220Ki, request is 0") in one message. Compare with
 Episode 1, where no event ever named the kernel.
 
+Count the two kinds of corpses (useful when narrating):
+
+```bash
+kubectl get pods -n eviction-demo -o jsonpath='{range .items[*]}{.status.message}{"\n"}{end}' \
+  | grep -c "low on resource"     # ranking-evicted (the eviction manager's kill)
+kubectl get pods -n eviction-demo -o jsonpath='{range .items[*]}{.status.message}{"\n"}{end}' \
+  | grep -c "Pod was rejected"    # admission-rejected (the churn loop)
+```
+
 ## 10. Investigation: Evicted vs OOMKilled
 
 ```bash
@@ -383,11 +401,27 @@ kube_pod_status_reason{namespace="eviction-demo", reason="Evicted"}
 
 ## 13. The Comparison Table
 
-The episode's money shot — run both deaths in one session:
+The episode's money shot — run both deaths in one session.
+
+**Guided:** `make demo-ep02` ends with this step automatically.
+
+**Manual** — re-trigger Episode 1's OOMKill (the kernel, per-container),
+then compare:
 
 ```bash
-make demo-ep02   # ends with the side-by-side: re-triggers the Ep1 OOMKill
+# payment-service's limit is 128Mi — feed it 200MB with the same gradual
+# 2MB/2s ramp; the kernel SIGKILLs it ~2–4 min in
+PS_POD=$(kubectl get pods -n shopnow -l app=payment-service -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n shopnow "$PS_POD" -- python -c "import urllib.request as u; print(u.urlopen(u.Request('http://localhost:8080/allocate?mb=200', method='POST')).read().decode(), end='')"
+
+# wait ~2–4 min for the kernel to kill it, then the side-by-side:
+kubectl get pods -n shopnow -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,LAST-REASON:.status.containerStatuses[0].lastState.terminated.reason
+kubectl get pods -n eviction-demo -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,REASON:.status.reason
 ```
+
+Expected: payment-service `Running` with RESTARTS +1 and
+`LAST-REASON: OOMKilled` (verified: 8 → 9) — versus the hogs'
+`Failed / Evicted` corpses.
 
 | | OOMKilled | Evicted |
 |---|---|---|
