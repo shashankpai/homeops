@@ -33,7 +33,7 @@ MAX_ROUNDS=10
 ALLOC_TIMEOUT=300          # seconds to wait for each round's allocations
 
 pause() { echo -e "\n${YELLOW}>>> $1 — press Enter to continue${NC}"; read -r; }
-banner() { echo -e "\n${CYAN}===================================================================$NC"; echo -e "${CYAN}  $1${NC}"; echo -e "${CYAN}===================================================================$NC}"; }
+banner() { echo -e "\n${CYAN}===================================================================$NC"; echo -e "${CYAN}  $1${NC}"; echo -e "${CYAN}===================================================================$NC"; }
 
 if [ -z "${KUBECONFIG:-}" ]; then
     export KUBECONFIG="$HOME/.kube/config-k8suth"
@@ -44,13 +44,19 @@ banner "EPISODE 2: OOMKilled vs Evicted — They Are NOT the Same"
 # --- 1. Preflight ------------------------------------------------------------
 banner "STEP 1 — Preflight: pick the victim node, check the control workload"
 
-# Pick the first worker node (agent role)
-NODE=$(kubectl get nodes -l node-role.kubernetes.io/agent -o jsonpath='{.items[0].metadata.name}')
+# Pick the first worker node: any node WITHOUT the control-plane role label.
+# (K3s does not label agents with node-role.kubernetes.io/agent — the only
+#  role label in this lab is node-role.kubernetes.io/control-plane on the
+#  server. Selecting by '!control-plane' works on stock K3s.)
+NODE=$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[0].metadata.name}')
 if [ -z "$NODE" ]; then
-    # fallback: any node that isn't the control-plane
-    NODE=$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -v -i master | head -1)
+    # fallback: any node that isn't the control-plane (matched by label OR name)
+    CP=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[0].metadata.name}')
+    NODE=$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -v "^${CP}$" | head -1)
 fi
 echo -e "${GREEN}Target node (eviction victim):${NC} $NODE"
+# In this lab node names ARE their IPs (hostname label = node IP), so the
+# node name doubles as the SSH target for the threshold config step.
 echo -e "${YELLOW}Node memory before we start:${NC}"
 kubectl top node "$NODE"
 
@@ -154,18 +160,35 @@ echo ""
 echo -e "${YELLOW}Hog pods now (STATUS/REASON):${NC}"
 kubectl get pods -n "$NS" -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,REASON:.status.reason,NODE:.spec.nodeName
 
+# Two kinds of 'Evicted' corpses show up here — both are teaching moments:
+#   1. RANKING eviction: message "The node was low on resource: memory..."
+#      (the kubelet's eviction manager killed a BestEffort hog to recover)
+#   2. ADMISSION rejection: message "Pod was rejected: The node had
+#      condition: [MemoryPressure]" (replacements scheduled onto the pinned
+#      node during the ~5m evictionPressureTransitionPeriod get rejected at
+#      kubelet admission, piling up Failed/Evicted corpses)
+RANK_EVICTED=$(kubectl get pods -n "$NS" -o jsonpath='{range .items[*]}{.status.message}{"\n"}{end}' 2>/dev/null | grep -c "low on resource" || true)
+REJECTED=$(kubectl get pods -n "$NS" -o jsonpath='{range .items[*]}{.status.message}{"\n"}{end}' 2>/dev/null | grep -c "Pod was rejected" || true)
+echo ""
+echo -e "${GREEN}Eviction breakdown: ${RANK_EVICTED} ranking-evicted, ${REJECTED} admission-rejected (churn during the ~5m pressure window)${NC}"
+
 echo ""
 echo -e "${YELLOW}The eviction events (the smoking gun):${NC}"
-kubectl get events -n "$NS" --sort-by=.lastTimestamp | grep -i -E "evict|low on resource" | tail -10 || echo "(no eviction events found)"
+kubectl get events -n "$NS" --sort-by=.lastTimestamp -o custom-columns=REASON:.reason,MESSAGE:.message 2>/dev/null | grep -iE "evict|low on resource" | tail -10 || echo "(no eviction events found)"
 
 pause "Eviction captured"
 
 # --- 6. Investigation --------------------------------------------------------
 banner "STEP 6 — Investigate: who died, who survived, and why"
 
-EVICTED_POD=$(kubectl get pods -n "$NS" -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.reason}{"\n"}{end}' | grep Evicted | head -1 | awk '{print $1}')
+EVICTED_POD=$(kubectl get pods -n "$NS" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.message}{"\n"}{end}' 2>/dev/null | grep "low on resource" | head -1 | cut -f1)
+if [ -z "$EVICTED_POD" ]; then
+    # fallback: any evicted pod
+    EVICTED_POD=$(kubectl get pods -n "$NS" -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.reason}{"\n"}{end}' | grep Evicted | head -1 | awk '{print $1}')
+fi
 if [ -n "$EVICTED_POD" ]; then
-    echo -e "${YELLOW}Describe the evicted pod — note Status: Failed, Reason: Evicted:${NC}"
+    echo -e "${YELLOW}Describe the RANKING-evicted pod (the one the eviction manager chose)${NC}"
+    echo -e "${YELLOW}— note Status: Failed, Reason: Evicted, and the 'low on resource' message with threshold + ranking evidence:${NC}"
     kubectl describe pod -n "$NS" "$EVICTED_POD" | grep -B 2 -A 8 -E "^Status:|Reason:|Events:" | head -40
 fi
 
@@ -182,9 +205,15 @@ cat << 'RANKING'
     3. Guaranteed           (requests == limits)    <- protected
   (PriorityClass breaks ties within a tier)
 
+  NOTE what actually happened: the kubelet evicted only ONE hog — the
+  ranking picked the biggest usage-over-request offender, and evicting it
+  freed enough memory to recover, so the ranking evictions STOPPED there.
+  The other 'Evicted' corpses are replacements REJECTED at kubelet
+  admission during the ~5m pressure window (see the breakdown above).
+
   payment-service is Burstable, but its usage (~30MB) is BELOW its
-  request (64Mi) — usage-over-requests is negative — so every BestEffort
-  hog dies before it does. That is the QoS lesson of this episode.
+  request (64Mi) — usage-over-requests is negative — so it ranked last
+  and was never touched. That is the QoS lesson of this episode.
 RANKING
 
 echo ""

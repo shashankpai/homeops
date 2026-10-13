@@ -68,13 +68,28 @@ kubelet eviction signals:
 
 [1:45]
 
-Each signal has thresholds. Defaults look like this:
+Each signal has thresholds. On an upstream cluster, the defaults look like this:
 
 ```
 --eviction-hard=memory.available<100Mi,nodefs.available<10%,...
 ```
 
 Meaning: if available memory on this node drops below 100 megabytes, the kubelet doesn't ask permission. It starts deleting pods until the node recovers.
+
+[1:55 — show terminal]
+
+But here's a K3s surprise we verified live on this cluster. Ask the kubelet what it's actually watching:
+
+```bash
+kubectl get --raw /api/v1/nodes/192.168.1.82/proxy/configz \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['kubeletconfig'].get('evictionHard',{}))"
+```
+
+```
+{'imagefs.available': '5%', 'nodefs.available': '5%'}
+```
+
+No memory.available. At all. Stock K3s only configures the disk signals — which means out of the box, the kubelet will NEVER evict on memory pressure. The node would march straight to a system-level OOM instead. So in this lab, we configure the memory threshold ourselves. That's the next setup detail.
 
 [2:10]
 
@@ -148,7 +163,7 @@ kubelet-arg:
 
 [4:55]
 
-We raised it from the default 100 megs to 1 gig, so we don't have to fill the whole node — and so you can see that the threshold is just... kubelet configuration. A file. Not an API object. Remember that for later.
+We set it to 1 gig — and notice, we didn't RAISE anything, because on K3s there is no memory threshold by default. We ADDED it. Without this line the kubelet would never evict on memory pressure — the node would just die a system-level OOM death. And notice what this IS: kubelet configuration. A file. Not an API object. Remember that for later.
 
 ---
 
@@ -231,33 +246,46 @@ Watch closely. The blue memory line in Grafana is getting close to the red thres
 [8:20]
 
 ```
-memory-hog-5d9c6b5f4-7tq1    0/1     Evicted   0          9m
-memory-hog-5d9c6b5f4-9xz3    0/1     Evicted   0          9m
+memory-hog-6944568f56-dr7jj   0/1   Evicted   0   14m
+memory-hog-6944568f56-q92f7   1/1   Running   0   14m
+memory-hog-6944568f56-zj4xg   1/1   Running   0   14m
 ```
 
 [8:30]
 
-EVICTED. Notice everything that's NOT here. No exit code. No restart count. No Last State, no OOMKilled, no 137. The pod isn't telling us a container died — the pod itself is gone. Failed. Deleted off this node.
+EVICTED. And look — only ONE of the three. The kubelet ranked them, killed the biggest usage-over-request offender, and the moment it freed seven hundred megs the node was back above the threshold — so the killing stopped. Eviction is not a massacre. It's triage. The other two hogs are still Running. Still eating.
+
+[8:40]
+
+And notice everything that's NOT on the dead one. No exit code. No restart count. No Last State, no OOMKilled, no 137. The pod isn't telling us a container died — the pod itself is gone. Failed. Deleted off this node.
 
 [8:50 — show terminal]
 
 Now the event — the single best line of evidence in this whole episode:
 
 ```bash
-kubectl get events -n eviction-demo --sort-by=.lastTimestamp | grep -i evict
+kubectl get events -n eviction-demo --sort-by=.lastTimestamp \
+  -o custom-columns=REASON:.reason,MESSAGE:.message | grep -i evict
 ```
 
 ```
-The node was low on resource: memory. Threshold quantity: 1Gi, available: 998Mi.
+Evicted   The node was low on resource: memory. Threshold quantity: 1Gi,
+          available: 1018844Ki. Container memory-hog was using 704220Ki,
+          request is 0, has larger consumption of memory.
+Evicted   The node had condition: [MemoryPressure].        <- ×19
 ```
 
 [9:15]
 
-Read that out loud. THE NODE was low on resource MEMORY. Threshold quantity 1Gi. Available, 998 megs. That event names the killer, the weapon, the threshold, and the evidence — in one line. In Episode 1, no event ever mentioned the kernel. Here, no kernel was ever involved.
+Read that first one out loud. THE NODE was low on resource MEMORY. Threshold quantity, 1Gi. Available, 1018844Ki — just under. And then the ranking math, printed by the killer itself: "Container memory-hog was using 704220Ki, request is 0, has larger consumption of memory." That event names the killer, the weapon, the threshold, AND the evidence — in one message. In Episode 1, no event ever mentioned the kernel. Here, no kernel was ever involved.
+
+[9:35]
+
+And the second line — "The node had condition: MemoryPressure" — nineteen of those. Those aren't the ranking's work. Those are the Deployment's replacements: recreated, scheduled back onto this same node — they're pinned here — then rejected at the kubelet's front door while the pressure condition was still up. Five minutes of churn, a pile of corpses, until the pressure cleared. We'll come back to that.
 
 [9:40]
 
-And payment-service? Still Running. Zero restarts. We just filled a node past its eviction threshold — and the Burstable pod didn't just survive an OOMKill, it survived EVICTION. Why? That's next.
+And payment-service? Still Running. Restart count unchanged — every restart on that counter belongs to Episode 1. We just filled a node past its eviction threshold — and the Burstable pod didn't just survive an OOMKill, it survived EVICTION. Why? That's next.
 
 ---
 
@@ -273,11 +301,11 @@ The signature graph: node memory available, falling from about two gigs, crossin
 
 [10:45 — show Grafana, Panel 2]
 
-Second panel: MemoryPressure. Flat at zero... zero... zero... then flipping to one exactly when the threshold crossed. That's the node's own condition — the kubelet setting a flag that says: this node is under memory pressure. And the scheduler reads it. Which is why our evicted hogs got recreated on the OTHER worker — the pressured node quietly repels new pods.
+Second panel: MemoryPressure. Flat at zero... zero... zero... then flipping to one exactly when the threshold crossed. That's the node's own condition — the kubelet setting a flag that says: this node is under memory pressure. And it doesn't just set the flag — it taints the node, and it enforces the pressure at its own front door. Our hogs are pinned to this node, so every replacement the Deployment created during the pressure window got scheduled... and then REJECTED at kubelet admission. That's the churn loop we saw in the events. The pressured node repels its victims.
 
 [11:15 — show Grafana, Panel 3]
 
-Third panel: pod status reason. Three lines, one per hog. Each steps from nothing to Evicted, in sequence — the kubelet deleting them one at a time, checking the node between each kill. And notice what's missing: no restart counter climbing. Evicted pods don't restart — they get REPLACED.
+Third panel: pod status reason. And the panel tells the true story: ONE line steps from nothing to Evicted — that's the ranking kill. The rest of the Evicted pile steps up in a burst — the admission rejections, replacement after replacement, across the five-minute pressure window. And notice what's missing everywhere: no restart counter climbing. Evicted pods don't restart — they get REPLACED.
 
 [11:45 — show Grafana, Panel 4]
 
@@ -323,7 +351,7 @@ Then Burstable pods — and here's the nuance nobody tells you: the kubelet does
 
 [13:50]
 
-So the ranking sent every hog to the gallows first. If pressure had continued — if we'd kept filling after the hogs died — payment-service would eventually be at risk too. And after ALL the Burstables... the Guaranteed pods. Requests equal to limits — as long as they stay within their requests, the node basically can't evict them without a fight. That's what Guaranteed is FOR.
+So the ranking sent the hogs to the gallows first — and it stopped at ONE, because one was enough to recover the node. If pressure had continued — if we'd kept filling after that — the next hog, then the one after, and eventually payment-service would be at risk too. And after ALL the Burstables... the Guaranteed pods. Requests equal to limits — as long as they stay within their requests, the node basically can't evict them without a fight. That's what Guaranteed is FOR.
 
 [14:25]
 
@@ -344,7 +372,7 @@ Let's go to the node and find the killer's confession — like we did with dmesg
 [15:08 — show terminal, on the node]
 
 ```bash
-ssh -i lab/ssh/id_rsa ubuntu@$WORKER_IP
+ssh -i lab/ssh/id_rsa ubuntu@$NODE   # node names ARE their IPs in this lab
 
 # the threshold, as the kubelet sees it
 cat /etc/rancher/k3s/config.yaml
@@ -397,11 +425,11 @@ kubectl get pods -n eviction-demo
 ```
 
 ```
-NAME                             STATUS    RESTARTS
-payment-service-7d9c6b5f4-x2k8p  Running   4          <- OOMKilled, still alive
+NAME                              STATUS    RESTARTS
+payment-service-65d7bd9488-26t52  Running   9         <- OOMKilled, still alive
 
 NAME                          STATUS     RESTARTS
-memory-hog-5d9c6b5f4-2k8p     Evicted    0          <- gone from the node
+memory-hog-6944568f56-dr7jj   Evicted    0         <- gone from the node
 ```
 
 [17:35 — show full-frame table]
@@ -435,7 +463,7 @@ Against the KERNEL — the OOM killer — it's about the pod: right-size your li
 
 [18:50]
 
-Against the KUBELET — eviction — it's about the node: first, never run BestEffort in production. You're volunteering to be the emergency food. Second, set real requests — a pod using under its request is nearly eviction-proof. Third, requests equal to limits — Guaranteed — for the things that must survive node pressure. Fourth, PriorityClass as your tiebreaker: batch jobs die before the payment path. And fifth, know your thresholds — memory.available under 100 megs is the default, and that's shockingly late to discover in an incident.
+Against the KUBELET — eviction — it's about the node: first, never run BestEffort in production. You're volunteering to be the emergency food. Second, set real requests — a pod using under its request is nearly eviction-proof. Third, requests equal to limits — Guaranteed — for the things that must survive node pressure. Fourth, PriorityClass as your tiebreaker: batch jobs die before the payment path. And fifth, know your thresholds — and CHECK them, because they're not what you assume. Upstream defaults to memory.available under 100 megs; stock K3s doesn't monitor memory at all until you configure it. Either way, discovering your threshold during an incident is shockingly late.
 
 [19:30]
 

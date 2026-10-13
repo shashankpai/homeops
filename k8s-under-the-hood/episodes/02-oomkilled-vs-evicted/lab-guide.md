@@ -105,25 +105,34 @@ Key moving parts:
 
 ## 5. Configure the Eviction Threshold (one-time, reversible)
 
-The kubelet's default hard threshold is `memory.available<100Mi` — meaning the
-node must be almost completely full before eviction fires. On a 4GB worker
-that means allocating ~3GB, which is slow and uncomfortably close to
-destabilizing the node.
-
-For the demo we raise the threshold to **1Gi** on the target worker: we only
-need to fill ~2GB, and as a bonus we learn where eviction thresholds live.
-
-> This step is **reversible** — Section 14 shows how to restore the default.
-
-From your controller, SSH to the target worker (the demo script prints the
-node name; workers are 192.168.1.82 and 192.168.1.83):
+**This step is REQUIRED — not just a convenience.** K3s's generated kubelet
+config only sets disk thresholds (`nodefs.available<5%`, `imagefs.available<5%`)
+and does **NOT** monitor `memory.available` at all. Verify on your workers:
 
 ```bash
-# pick the worker demo.sh will target — or run this on whichever you prefer
-# (the node name is shown by: kubectl get nodes -l node-role.kubernetes.io/agent)
-WORKER_IP=192.168.1.83   # example: worker2
+kubectl get --raw /api/v1/nodes/192.168.1.82/proxy/configz \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['kubeletconfig'].get('evictionHard',{}))"
+# -> {'imagefs.available': '5%', 'nodefs.available': '5%'}   <- no memory.available!
+```
 
-ssh -i lab/ssh/id_rsa ubuntu@$WORKER_IP
+Without a `memory.available` threshold the kubelet will never evict on memory
+pressure — the node would march all the way to a system-level OOM instead.
+(Upstream kubeadm clusters default to `memory.available<100Mi`; K3s overrides
+that whole map with its disk-only defaults.)
+
+For the demo we set the threshold to **1Gi** on the target worker: on a 4GB
+worker we only need to fill ~2GB, which is comfortably short of destabilizing
+the node.
+
+> This step is **reversible** — Section 14 shows how to restore K3s's default.
+
+The target worker is `192.168.1.82` (what `demo.sh` picks — in this lab node
+names ARE their IPs, so the node name doubles as the SSH target):
+
+```bash
+NODE=192.168.1.82
+
+ssh -i lab/ssh/id_rsa ubuntu@$NODE
 
 # On the worker: add the kubelet eviction arg to the K3s agent config.
 # (The lab's Ansible install uses env vars only — this file doesn't exist yet,
@@ -136,30 +145,43 @@ EOF
 
 # Restart the agent to pick up the config
 sudo systemctl restart k3s-agent
-
-# Verify the kubelet picked it up (look for --eviction-hard in the args)
-ps aux | grep kubelet | grep -o 'eviction-hard=[^ ]*'
 exit
+```
+
+Verify the kubelet actually picked it up — from the controller, via configz
+(the kubelet runs inside the `k3s agent` process on K3s, so the flag does NOT
+show up in `ps aux`):
+
+```bash
+kubectl get --raw /api/v1/nodes/$NODE/proxy/configz \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['kubeletconfig'].get('evictionHard',{}))"
+# -> {'memory.available': '1Gi'}
 ```
 
 > **Why this matters on camera:** this file IS the eviction threshold. There
 > is no API for it — it's kubelet configuration. Point at it in the episode.
+>
+> **Note:** the `--eviction-hard` flag REPLACES the whole threshold map, so
+> while this config is in place only `memory.available` is monitored (the
+> disk thresholds are suspended). Fine for the demo; Section 14 restores the
+> K3s default.
 
 <details>
-<summary>Alternative: keep the default 100Mi threshold</summary>
+<summary>Alternative: keep K3s's disk-only defaults (no memory eviction)</summary>
 
-The demo works with the default — demo.sh just needs more rounds to fill the
-node (~3GB on a 4GB worker). Risk: less headroom for node stability. Only do
-this if you can't modify the worker.
+Not viable: with no `memory.available` threshold the kubelet never evicts on
+memory pressure — the hogs would drive the node to a system-level OOM (and a
+reboot) instead of a clean eviction. Configure the threshold (Section 5).
 </details>
 
 ## 6. Deploy the Memory Hogs
 
 The manifest has a `__WORKER_NODE__` placeholder; the script substitutes the
-node name (discover yours with `kubectl get nodes -l node-role.kubernetes.io/agent`):
+node name (discover yours with
+`kubectl get nodes -l '!node-role.kubernetes.io/control-plane'`):
 
 ```bash
-NODE=$(kubectl get nodes -l node-role.kubernetes.io/agent -o jsonpath='{.items[0].metadata.name}')
+NODE=$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[0].metadata.name}')
 sed "s/__WORKER_NODE__/$NODE/" episodes/02-oomkilled-vs-evicted/manifests/memory-hog.yaml | kubectl apply -f -
 
 kubectl rollout status deployment/memory-hog -n eviction-demo --timeout=180s
@@ -211,34 +233,59 @@ housekeeping interval (~10s). Watch for it:
 kubectl get pods -n eviction-demo -w
 ```
 
-What you'll see:
+What you'll see (verified on the lab cluster):
 
 ```
 NAME                          READY   STATUS    RESTARTS   AGE
-memory-hog-5d9c6b5f4-2k8p    1/1     Running   0          5m
-memory-hog-5d9c6b5f4-7tq1    0/1     Evicted   0          5m
-memory-hog-5d9c6b5f4-9xz3    0/1     Evicted   0          5m
+memory-hog-6944568f56-dr7jj   0/1     Evicted   0          14m
+memory-hog-6944568f56-q92f7   1/1     Running   0          14m
+memory-hog-6944568f56-zj4xg   1/1     Running   0          14m
 ```
 
-**STATUS: Evicted.** No restart count, no OOMKilled, no exit code story —
-the pod is dead and the Deployment must recreate it elsewhere. Then the
-smoking gun:
+**Surprise #1: the kubelet evicts the MINIMUM it needs to.** It ranks all
+BestEffort pods by usage-over-request, evicts the biggest offender — ONE hog
+(freed ~700MB) — and the node recovers above the threshold, so the ranking
+evictions stop. The other two hogs survive. Eviction is not a massacre; it's
+a triage.
+
+**Surprise #2: the churn loop.** The Deployment recreates the dead hog — but
+the hogs are pinned to this node via `nodeSelector`, and the node's
+`MemoryPressure` condition stays `True` for ~5 minutes
+(`evictionPressureTransitionPeriod`). Every replacement that lands during
+that window gets REJECTED at kubelet admission and marked `Failed/Evicted`
+with a pile-up of corpses:
+
+```
+memory-hog-6944568f56-gmt4d   0/1   Evicted   # "Pod was rejected: The node
+memory-hog-6944568f56-kzmft   0/1   Evicted   #  had condition: [MemoryPressure]"
+... (≈19 of these over the 5-minute window)
+```
+
+Then the smoking gun — the ONE event from the ranking eviction:
 
 ```bash
-kubectl get events -n eviction-demo --sort-by=.lastTimestamp | grep -i evict
+kubectl get events -n eviction-demo --sort-by=.lastTimestamp \
+  -o custom-columns=REASON:.reason,MESSAGE:.message | grep -i evict
 ```
 
 ```
-The node was low on resource: memory. Threshold quantity: 1Gi, available: 999Mi.
+Evicted   The node was low on resource: memory. Threshold quantity: 1Gi,
+          available: 1018844Ki. Container memory-hog was using 704220Ki,
+          request is 0, has larger consumption of memory.
+Evicted   The node had condition: [MemoryPressure].        <- ×19 (admission rejections)
 ```
 
-That event names the killer, the signal, the threshold, and the evidence in
-one line. Compare with Episode 1, where no event ever named the kernel.
+The first event names the killer, the signal, the threshold, AND the ranking
+evidence ("using 704220Ki, request is 0") in one message. Compare with
+Episode 1, where no event ever named the kernel.
 
 ## 10. Investigation: Evicted vs OOMKilled
 
 ```bash
-EVICTED_POD=<one of the evicted pods>
+# pick the pod with the classic 'low on resource' message — the ranking victim
+EVICTED_POD=$(kubectl get pods -n eviction-demo \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.message}{"\n"}{end}' \
+  | grep "low on resource" | head -1 | cut -f1)
 kubectl describe pod -n eviction-demo $EVICTED_POD | grep -B2 -A8 -E "^Status:|Reason:|Events:"
 ```
 
@@ -252,9 +299,15 @@ Node side:
 kubectl describe node $NODE | grep -A 6 "Conditions:"
 ```
 
-`MemoryPressure` is now `True` — the node's own account of the shortage.
-The scheduler sees it too: evicted hogs reschedule to the other worker
-(or stay Pending), not back onto the pressured node.
+`MemoryPressure` is now `True` — the node's own account of the shortage —
+and the kubelet has tainted the node with
+`node.kubernetes.io/memory-pressure:NoSchedule`. Because the hogs are pinned
+to this node via `nodeSelector`, their replacements have nowhere else to go:
+during the ~5-minute pressure window they bounce between "scheduled onto the
+node" and "rejected at kubelet admission" (the churn loop from Section 9).
+Once the transition period expires and the condition clears, a replacement
+runs normally on the same node. The pressured node repels its victims —
+through kubelet admission, not just the scheduler.
 
 The QoS post-mortem — who died and why:
 
@@ -263,8 +316,9 @@ kubectl get pods -n eviction-demo -o custom-columns=NAME:.metadata.name,QOS:.sta
 kubectl get pods -n shopnow     -o custom-columns=NAME:.metadata.name,QOS:.status.qosClass,STATUS:.status.phase
 ```
 
-Hogs: BestEffort → evicted. payment-service: Burstable but usage (~30MB)
-below request (64Mi) → survived. **Usage-over-requests is the ranking
+Hogs: BestEffort → one evicted by ranking, two survived (the kubelet evicts
+the minimum needed). payment-service: Burstable but usage (~30MB) below
+request (64Mi) → never touched. **Usage-over-requests is the ranking
 metric; BestEffort is always first in line.**
 
 ## 11. On the Node: The Kubelet's Side
@@ -272,7 +326,8 @@ metric; BestEffort is always first in line.**
 Two logs, two authors — this is the contrast with Episode 1's `dmesg`:
 
 ```bash
-ssh -i lab/ssh/id_rsa ubuntu@$WORKER_IP
+NODE=192.168.1.82   # the target worker from Section 5 (node name == IP)
+ssh -i lab/ssh/id_rsa ubuntu@$NODE
 
 # 1. The threshold, as the kubelet sees it (we configured this in Section 5)
 cat /etc/rancher/k3s/config.yaml
@@ -322,7 +377,7 @@ make demo-ep02   # ends with the side-by-side: re-triggers the Ep1 OOMKill
 | Trigger | own limit exceeded | node `memory.available` below threshold |
 | QoS protection | none — any class dies | everything — BestEffort first |
 | Pod after death | Running, RESTARTS +1 | Failed, gone from node |
-| Where new pod lands | same node (restart in place) | elsewhere (pressured node repels) |
+| Where new pod lands | same node (restart in place) | Pending (pressured node repels BestEffort) |
 | Evidence | `memory.events`, `dmesg` | events, node conditions, `journalctl` |
 | Metrics | `..._last_terminated_reason{reason="OOMKilled"}` | `kube_pod_status_reason{reason="Evicted"}` |
 
@@ -339,10 +394,19 @@ to clear. payment-service and the lab stay running.
 **Restore the default eviction threshold** on the worker (revert Section 5):
 
 ```bash
-ssh -i lab/ssh/id_rsa ubuntu@$WORKER_IP
+NODE=192.168.1.82
+ssh -i lab/ssh/id_rsa ubuntu@$NODE
 sudo rm /etc/rancher/k3s/config.yaml
 sudo systemctl restart k3s-agent
 exit
+```
+
+Verify via configz that only the K3s disk defaults remain:
+
+```bash
+kubectl get --raw /api/v1/nodes/$NODE/proxy/configz \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['kubeletconfig'].get('evictionHard',{}))"
+# -> {'imagefs.available': '5%', 'nodefs.available': '5%'}
 ```
 
 Verify: `kubectl describe node $NODE` shows `MemoryPressure False` once the
@@ -353,9 +417,9 @@ evicted hogs' memory is freed (metrics drop back within a scrape or two).
 ## Troubleshooting
 
 **No eviction after many rounds** — check whether the threshold is actually
-configured (`ps aux | grep kubelet | grep eviction-hard` on the worker), and
-whether the node is truly filling (`kubectl top node $NODE`). With the 100Mi
-default you need ~3GB; add more rounds or raise hogs.
+configured (configz command in Section 5 — `ps aux` will NOT show it; the
+kubelet runs inside the k3s agent process), and whether the node is truly
+filling (`kubectl top node $NODE`).
 
 **Hogs rescheduled onto the other worker and pressure it too** — demo.sh
 stops ramping at first eviction; run `make cleanup-ep02` if in doubt.
