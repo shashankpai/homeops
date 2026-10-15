@@ -282,17 +282,33 @@ demo.sh ramps +256MB per hog per round and checks the node between rounds:
 make demo-ep02        # guided — pause at each step
 ```
 
-Or manually — allocate on every hog:
+Or manually — one loop invocation is ONE round: it asks every Running hog
+for +256MB (~768MB on the node with 3 hogs). The execs return immediately —
+the hog allocates in the background, 2MB every 2s, so a round finishes over
+~4 minutes (paced so Prometheus's 15s scrape interval catches the drain in
+Grafana):
 
 ```bash
-for pod in $(kubectl get pods -n eviction-demo -l app=memory-hog -o jsonpath='{.items[*].metadata.name}'); do
+for pod in $(kubectl get pods -n eviction-demo -l app=memory-hog \
+             --field-selector status.phase=Running \
+             -o jsonpath='{.items[*].metadata.name}'); do
   kubectl exec -n eviction-demo $pod -- python -c "import urllib.request as u; print(u.urlopen(u.Request('http://localhost:8080/allocate?mb=256', method='POST')).read().decode(), end='')"
 done
+
+# between rounds: watch the drain, then run the loop again
+kubectl top node $NODE
 ```
 
-Each round takes ~4 minutes (2MB every 2s per hog — deliberately paced so
-Prometheus's 15s scrape interval catches the drain in Grafana). Watch the
-`node_memory_MemAvailable_bytes` panel fall toward the red threshold line.
+**Run it 2–3 times.** One round is never enough — repeat the loop, checking
+between rounds (Grafana Panel 1 or `kubectl top node $NODE`), until the blue
+line crosses the red threshold. The tested run crossed during Round 3; the
+exact count depends on the node's starting available memory. demo.sh
+automates exactly this (256MB per hog per round, checks between rounds,
+stops on the first eviction). `--field-selector status.phase=Running` keeps
+the loop away from replacement pods the kubelet rejected at admission during
+MemoryPressure (Failed/Evicted — exec into them would error). Once the
+threshold is crossed, eviction fires within the kubelet's housekeeping
+interval (~10s).
 
 ## 9. The Eviction
 
