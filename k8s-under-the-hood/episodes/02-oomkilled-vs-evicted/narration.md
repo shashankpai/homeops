@@ -299,6 +299,8 @@ Read that first one out loud. THE NODE was low on resource MEMORY. Threshold qua
 
 And the second line — "The node had condition: MemoryPressure" — nineteen of those. Those aren't the ranking's work. Those are the Deployment's replacements: recreated, scheduled back onto this same node — they're pinned here — then rejected at the kubelet's front door while the pressure condition was still up. Five minutes of churn, a pile of corpses, until the pressure cleared. We'll come back to that.
 
+And notice the timing: when the eviction first fires, you only see that first line. These pile up over the NEXT five minutes, one rejection per replacement attempt. So when you run this yourself, don't rush past the screen — keep the grep running and watch the count grow.
+
 [9:40]
 
 And payment-service? Still Running. Restart count unchanged — every restart on that counter belongs to Episode 1. We just filled a node past its eviction threshold — and the Burstable pod didn't just survive an OOMKill, it survived EVICTION. Why? That's next.

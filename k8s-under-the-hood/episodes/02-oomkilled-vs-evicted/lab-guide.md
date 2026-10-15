@@ -328,6 +328,14 @@ memory-hog-6944568f56-q92f7   1/1     Running   0          14m
 memory-hog-6944568f56-zj4xg   1/1     Running   0          14m
 ```
 
+**Status transitions: the victim goes `Running → Evicted` directly.** No
+`Error`, no `Pending`, no restart counter — the kubelet marks the POD itself
+`Failed` with `reason: Evicted`. `Error` is Episode 1's signature (the
+CONTAINER died; the pod stayed Running and restarted). `Pending` belongs to
+replacement pods — each new hog flashes `Pending` for a few seconds, then
+flips to `Evicted` (rejected at admission, during the pressure window) or to
+`Running` (once the window clears). Watch with `-w` to catch the flips.
+
 **Surprise #1: the kubelet evicts the MINIMUM it needs to.** It ranks all
 BestEffort pods by usage-over-request, evicts the biggest offender — ONE hog
 (freed ~700MB) — and the node recovers above the threshold, so the ranking
@@ -364,6 +372,12 @@ Evicted   The node had condition: [MemoryPressure].        <- ×19 (admission re
 The first event names the killer, the signal, the threshold, AND the ranking
 evidence ("using 704220Ki, request is 0") in one message. Compare with
 Episode 1, where no event ever named the kernel.
+
+**Timing: the ×N pile builds AFTER the eviction.** The ranking line appears
+the moment the threshold crosses; the rejection lines accumulate over the
+NEXT ~5 minutes, one per replacement attempt. Grep immediately after the
+eviction and you'll see only the ranking line — re-run it every minute or so
+and watch ×N grow. The count and the Ki numbers differ from run to run.
 
 Count the two kinds of corpses (useful when narrating):
 

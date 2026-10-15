@@ -113,7 +113,9 @@ has larger consumption of memory.
   in one message."
 - Then the churn loop: scroll the ~19 'Pod was rejected: The node had
   condition: [MemoryPressure]' events — the Deployment's replacements
-  bouncing off the kubelet's front door for ~5 minutes
+  bouncing off the kubelet's front door for ~5 minutes. Shoot this in the
+  minutes AFTER the eviction: the pile builds gradually (an immediate check
+  shows only the ranking event), so keep recording and let ×N grow
 
 ### Sequence F — The Metrics Replay (observability, 10:00–12:30)
 
