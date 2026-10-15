@@ -20,20 +20,31 @@
 
 ## Table of Contents
 
-1. [Episode Overview](#1-episode-overview)
-2. [Learning Objectives](#2-learning-objectives)
-3. [Lab Architecture](#3-lab-architecture)
-4. [Prerequisites](#4-prerequisites)
-5. [Configure the Eviction Threshold (one-time, reversible)](#5-configure-the-eviction-threshold-one-time-reversible)
-6. [Deploy the Memory Hogs](#6-deploy-the-memory-hogs)
-7. [Baseline: The Node Is Healthy](#7-baseline-the-node-is-healthy)
-8. [Trigger: Fill the Node](#8-trigger-fill-the-node)
-9. [The Eviction](#9-the-eviction)
-10. [Investigation: Evicted vs OOMKilled](#10-investigation-evicted-vs-oomkilled)
-11. [On the Node: The Kubelet's Side](#11-on-the-node-the-kubelets-side)
-12. [Metrics: Watching It Happen](#12-metrics-watching-it-happen)
-13. [The Comparison Table](#13-the-comparison-table)
-14. [Cleanup / Reset](#14-cleanup--reset)
+- [OOMKilled vs Evicted — They Are NOT the Same](#oomkilled-vs-evicted--they-are-not-the-same)
+  - [Lab Guide \& Runbook](#lab-guide--runbook)
+  - [Table of Contents](#table-of-contents)
+  - [1. Episode Overview](#1-episode-overview)
+  - [2. Learning Objectives](#2-learning-objectives)
+  - [3. Lab Architecture](#3-lab-architecture)
+  - [4. Prerequisites](#4-prerequisites)
+  - [5. Configure the Eviction Threshold (one-time, reversible)](#5-configure-the-eviction-threshold-one-time-reversible)
+    - [What `memory.available` is — and how other clusters ship it](#what-memoryavailable-is--and-how-other-clusters-ship-it)
+  - [6. Deploy the Memory Hogs](#6-deploy-the-memory-hogs)
+    - [What the hog actually does](#what-the-hog-actually-does)
+  - [7. Baseline: The Node Is Healthy](#7-baseline-the-node-is-healthy)
+  - [8. Trigger: Fill the Node](#8-trigger-fill-the-node)
+  - [9. The Eviction](#9-the-eviction)
+  - [10. Investigation: Evicted vs OOMKilled](#10-investigation-evicted-vs-oomkilled)
+  - [11. On the Node: The Kubelet's Side](#11-on-the-node-the-kubelets-side)
+  - [12. Metrics: Watching It Happen](#12-metrics-watching-it-happen)
+    - [Panel 1 — Node Memory Available vs Eviction Threshold (the drain)](#panel-1--node-memory-available-vs-eviction-threshold-the-drain)
+    - [Panel 2 — Node Condition: MemoryPressure](#panel-2--node-condition-memorypressure)
+    - [Panel 3 — Pod Status: Evicted / Failed](#panel-3--pod-status-evicted--failed)
+    - [Panel 4 — QoS Lens: Who Dies First and Why](#panel-4--qos-lens-who-dies-first-and-why)
+    - [Panel 5 — Split View: OOMKilled (Ep1) vs Evicted (Ep2)](#panel-5--split-view-oomkilled-ep1-vs-evicted-ep2)
+  - [13. The Comparison Table](#13-the-comparison-table)
+  - [14. Cleanup / Reset](#14-cleanup--reset)
+  - [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -204,6 +215,17 @@ reboot) instead of a clean eviction. Configure the threshold (Section 5).
 </details>
 
 ## 6. Deploy the Memory Hogs
+
+First ensure the contrast victim is running — Episode 1's payment-service
+(demo.sh does this automatically in its preflight; manually, check and deploy
+only if missing):
+
+```bash
+kubectl get deployment payment-service -n shopnow &>/dev/null || {
+  kubectl apply -f episodes/01-oom-killed/manifests/payment-service.yaml
+  kubectl rollout status deployment/payment-service -n shopnow --timeout=180s
+}
+```
 
 The manifest has a `__WORKER_NODE__` placeholder; the script substitutes the
 node name (discover yours with
