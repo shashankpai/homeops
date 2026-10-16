@@ -345,7 +345,11 @@ pod's STORED verdict never changes — `Failed` / `reason: Evicted` with the
 killer's message:
 
 ```bash
-kubectl get pod -n eviction-demo $VICTIM \
+# pick the ranking victim (the pod carrying the 'low on resource' message)
+EVICTED_POD=$(kubectl get pods -n eviction-demo \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.message}{"\n"}{end}' \
+  | grep "low on resource" | head -1 | cut -f1)
+kubectl get pod -n eviction-demo $EVICTED_POD \
   -o jsonpath='{.status.phase} | reason={.status.reason} | msg={.status.message}{"\n"}'
 # Failed | reason=Evicted | msg=The node was low on resource: memory. ...
 ```
