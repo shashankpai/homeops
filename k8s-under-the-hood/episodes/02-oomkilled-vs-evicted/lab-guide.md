@@ -381,12 +381,19 @@ memory-hog-6944568f56-kzmft   0/1   Evicted   #  had condition: [MemoryPressure]
 **Which door the replacement hits depends on timing.** The kubelet also
 taints the node (`node.kubernetes.io/memory-pressure:NoSchedule`) the moment
 the condition sets. Replacements arriving after the taint lands never get
-scheduled at all — they sit `Pending` with FailedScheduling events:
+scheduled at all — they sit `Pending` with FailedScheduling events (emitted
+by the scheduler on every retry while the pod waits):
+
+```bash
+kubectl get events -n eviction-demo --sort-by=.lastTimestamp \
+  -o custom-columns=REASON:.reason,MESSAGE:.message | grep -i schedul
+```
 
 ```
-Warning  FailedScheduling  default-scheduler  0/3 nodes are available: 1
-node(s) had untolerated taint(s), 2 node(s) didn't match Pod's node
-affinity/selector.
+FailedScheduling   0/3 nodes are available: 1 node(s) had untolerated
+taint(s), 2 node(s) didn't match Pod's node affinity/selector. no new
+claims to deallocate, preemption: 0/3 nodes are available: 3 Preemption
+is not helpful for scheduling.
 ```
 
 Same lesson, different door: the pressured node repels BestEffort through
