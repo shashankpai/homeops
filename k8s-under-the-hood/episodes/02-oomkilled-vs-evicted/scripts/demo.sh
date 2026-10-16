@@ -218,7 +218,7 @@ RANKING
 
 echo ""
 echo -e "${YELLOW}Did payment-service survive? (it should have):${NC}"
-kubectl get pods -n shopnow -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount
+kubectl get pods -n shopnow -o 'custom-columns=NAME:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount'
 
 pause "Investigation complete"
 
@@ -241,7 +241,7 @@ done
 
 echo ""
 echo -e "${CYAN}===================== THE COMPARISON =====================${NC}"
-kubectl get pods -n shopnow -o custom-columns=VICTIM1:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,LAST-REASON:.status.containerStatuses[0].lastState.terminated.reason
+kubectl get pods -n shopnow -o 'custom-columns=VICTIM1:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,LAST-REASON:.status.containerStatuses[0].lastState.terminated.reason'
 kubectl get pods -n "$NS" -o custom-columns=VICTIM2:.metadata.name,STATUS:.status.phase,REASON:.status.reason
 echo ""
 cat << 'TABLE'

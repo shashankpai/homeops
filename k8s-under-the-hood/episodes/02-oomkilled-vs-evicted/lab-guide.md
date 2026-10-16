@@ -609,7 +609,7 @@ PS_POD=$(kubectl get pods -n shopnow -l app=payment-service -o jsonpath='{.items
 kubectl exec -n shopnow "$PS_POD" -- python -c "import urllib.request as u; print(u.urlopen(u.Request('http://localhost:8080/allocate?mb=200', method='POST')).read().decode(), end='')"
 
 # wait ~2–4 min for the kernel to kill it, then the side-by-side:
-kubectl get pods -n shopnow -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,LAST-REASON:.status.containerStatuses[0].lastState.terminated.reason
+kubectl get pods -n shopnow -o 'custom-columns=NAME:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,LAST-REASON:.status.containerStatuses[0].lastState.terminated.reason'
 kubectl get pods -n eviction-demo -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,REASON:.status.reason
 ```
 
