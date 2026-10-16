@@ -329,12 +329,17 @@ memory-hog-6944568f56-zj4xg   1/1     Running   0          14m
 ```
 
 **Status transitions: the victim goes `Running → Evicted` directly.** No
-`Error`, no `Pending`, no restart counter — the kubelet marks the POD itself
-`Failed` with `reason: Evicted`. `Error` is Episode 1's signature (the
-CONTAINER died; the pod stayed Running and restarted). `Pending` belongs to
-replacement pods — each new hog flashes `Pending` for a few seconds, then
-flips to `Evicted` (rejected at admission, during the pressure window) or to
-`Running` (once the window clears). Watch with `-w` to catch the flips.
+`Pending`, no restart counter — the kubelet marks the POD itself `Failed`
+with `reason: Evicted`. `Pending` belongs to replacement pods — each new hog
+flashes `Pending` for a few seconds, then flips to `Evicted` (rejected at
+admission, during the pressure window) or to `Running` (once the window
+clears). Watch with `-w` to catch the flips. (Display quirk: right after
+the kill the STATUS column can flash `Error` — kubectl is reading the
+container's terminated state before the eviction's `Failed/Evicted` status
+lands; the stored `status.reason`/`status.message` is the authoritative
+record, and a fresh listing settles on `Evicted`. A genuine `Error` POD
+state — container died, pod stays Running and restarts — is Episode 1's
+signature.)
 
 **Surprise #1: the kubelet evicts the MINIMUM it needs to.** It ranks all
 BestEffort pods by usage-over-request, evicts the biggest offender — ONE hog
