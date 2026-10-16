@@ -674,6 +674,34 @@ rejected at kubelet admission during the ~5m
 `evictionPressureTransitionPeriod` window (Section 9, Surprise #2). They
 run normally once the condition clears. Run `make cleanup-ep02` if in doubt.
 
+**Scaled the deployment while pressured — a pile of fresh `Evicted`
+corpses** — the same churn loop, triggered on demand: the surviving hogs
+still hold their allocations (only `POST /release` drops them), so the node
+stays under `MemoryPressure` and every new BestEffort replica is scheduled
+then REJECTED at kubelet admission. Failed corpses don't count toward the
+replica count, so the ReplicaSet immediately creates another — the pile
+grows with every scale, and pods created in the same wave die together
+(matching AGE clusters). Fix: release the held memory, scale back, delete
+the corpses:
+
+```bash
+for p in $(kubectl get pods -n eviction-demo -l app=memory-hog \
+    --field-selector=status.phase=Running -o name); do
+  kubectl exec -n eviction-demo "${p#pod/}" -- python -c \
+    "import urllib.request as u; print(u.urlopen(u.Request('http://localhost:8080/release', method='POST')).read().decode(), end='')"
+done
+kubectl scale deployment memory-hog -n eviction-demo --replicas=3
+kubectl delete pods -n eviction-demo -l app=memory-hog --field-selector=status.phase=Failed
+```
+
+**`Evicted` vs `Error` in the corpse pile** — the STATUS column tells you
+WHICH death each had: `Evicted` at 0 restarts = admission-rejected (the
+container never ran, so no terminated status exists to override the pod's
+reason — these keep `Evicted` forever); `Error` with a restart count = a
+ranking victim (the container ran and was killed — its terminated status
+syncs and wins the column per the k8s#105467 display regression; the
+stored reason is still `Evicted`). Confirm with the jsonpath in Section 9.
+
 **Node became unresponsive** — rare (kubelet should evict before system OOM).
 Run cleanup from the controller; if the node is unreachable, reboot the VM in
 Proxmox and clean up after it recovers.
