@@ -98,6 +98,11 @@ memory-hog-...-zj4xg   1/1   Running   0   14m
 - Freeze on `Evicted` — hold 3 seconds. Call out the surprise: only ONE
   of the three died — the kubelet evicts the minimum it needs (triage,
   not a massacre)
+- Then let it flip: the STATUS column changes `Evicted → Error` seconds
+  later — known upstream display regression (k8s#105467): the container's
+  terminated state drowns out the pod's Evicted reason. Follow with the
+  jsonpath (reason=Evicted + the killer's message) as the authoritative
+  record
 - Then the event, full screen:
 
 ```

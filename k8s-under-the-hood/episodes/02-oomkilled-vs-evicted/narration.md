@@ -271,6 +271,8 @@ memory-hog-6944568f56-zj4xg   1/1   Running   0   14m
 
 EVICTED. And look — only ONE of the three. The kubelet ranked them, killed the biggest usage-over-request offender, and the moment it freed seven hundred megs the node was back above the threshold — so the killing stopped. Eviction is not a massacre. It's triage. The other two hogs are still Running. Still eating.
 
+And keep an eye on that status column — in a few seconds it's going to flip from Evicted to Error. That's not a change of verdict. It's a known kubectl display quirk: the container's last terminated state syncs in and drowns out the pod's Evicted reason. The pod's verdict is still Evicted — ask it directly, and it confesses.
+
 [8:40]
 
 And notice everything that's NOT on the dead one. No exit code. No restart count. No Last State, no OOMKilled, no 137. The pod isn't telling us a container died — the pod itself is gone. Failed. Deleted off this node.

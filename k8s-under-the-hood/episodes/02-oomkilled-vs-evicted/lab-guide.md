@@ -319,7 +319,8 @@ housekeeping interval (~10s). Watch for it:
 kubectl get pods -n eviction-demo -w
 ```
 
-What you'll see (verified on the lab cluster):
+What you'll see (verified on the lab cluster — the `Evicted` line is caught
+in the brief window before the display flips; see the quirk below):
 
 ```
 NAME                          READY   STATUS    RESTARTS   AGE
@@ -333,13 +334,26 @@ memory-hog-6944568f56-zj4xg   1/1     Running   0          14m
 with `reason: Evicted`. `Pending` belongs to replacement pods — each new hog
 flashes `Pending` for a few seconds, then flips to `Evicted` (rejected at
 admission, during the pressure window) or to `Running` (once the window
-clears). Watch with `-w` to catch the flips. (Display quirk: right after
-the kill the STATUS column can flash `Error` — kubectl is reading the
-container's terminated state before the eviction's `Failed/Evicted` status
-lands; the stored `status.reason`/`status.message` is the authoritative
-record, and a fresh listing settles on `Evicted`. A genuine `Error` POD
-state — container died, pod stays Running and restarts — is Episode 1's
-signature.)
+clears). Watch with `-w` to catch the flips.
+
+**Display quirk — known upstream regression (kubernetes/kubernetes#105467):
+the STATUS column flips `Evicted → Error` seconds after the kill, and stays
+there.** The kubelet writes `Failed/Evicted` first; the container's
+last-known terminated state (exit 137, reason `Error`) syncs moments later
+and, being more recent, takes precedence in kubectl's STATUS column. The
+pod's STORED verdict never changes — `Failed` / `reason: Evicted` with the
+killer's message:
+
+```bash
+kubectl get pod -n eviction-demo $VICTIM \
+  -o jsonpath='{.status.phase} | reason={.status.reason} | msg={.status.message}{"\n"}'
+# Failed | reason=Evicted | msg=The node was low on resource: memory. ...
+```
+
+So: catch `Evicted` in the first seconds with `-w`, or read it from
+reason/message anytime. A genuine `Error` POD state — container died, pod
+stays Running and restarts — is Episode 1's signature; here `Error` is just
+the container's death mask over an `Evicted` verdict.
 
 **Surprise #1: the kubelet evicts the MINIMUM it needs to.** It ranks all
 BestEffort pods by usage-over-request, evicts the biggest offender — ONE hog
