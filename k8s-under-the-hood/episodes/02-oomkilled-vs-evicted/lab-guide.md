@@ -355,6 +355,21 @@ memory-hog-6944568f56-kzmft   0/1   Evicted   #  had condition: [MemoryPressure]
 ... (≈19 of these over the 5-minute window)
 ```
 
+**Which door the replacement hits depends on timing.** The kubelet also
+taints the node (`node.kubernetes.io/memory-pressure:NoSchedule`) the moment
+the condition sets. Replacements arriving after the taint lands never get
+scheduled at all — they sit `Pending` with FailedScheduling events:
+
+```
+Warning  FailedScheduling  default-scheduler  0/3 nodes are available: 1
+node(s) had untolerated taint(s), 2 node(s) didn't match Pod's node
+affinity/selector.
+```
+
+Same lesson, different door: the pressured node repels BestEffort through
+the scheduler's taint instead of the kubelet's admission check. Either way,
+the replacement waits out the ~5-minute window, then runs on the same node.
+
 Then the smoking gun — the ONE event from the ranking eviction:
 
 ```bash
@@ -412,11 +427,13 @@ kubectl describe node $NODE | grep -A 6 "Conditions:"
 and the kubelet has tainted the node with
 `node.kubernetes.io/memory-pressure:NoSchedule`. Because the hogs are pinned
 to this node via `nodeSelector`, their replacements have nowhere else to go:
-during the ~5-minute pressure window they bounce between "scheduled onto the
-node" and "rejected at kubelet admission" (the churn loop from Section 9).
+during the ~5-minute pressure window they're repelled at one of two doors:
+bounced between "scheduled onto the node" and "rejected at kubelet
+admission" (the churn loop from Section 9), or held `Pending` by the
+scheduler's memory-pressure taint (FailedScheduling: "untolerated taint").
 Once the transition period expires and the condition clears, a replacement
 runs normally on the same node. The pressured node repels its victims —
-through kubelet admission, not just the scheduler.
+at the scheduler's taint AND the kubelet's admission door.
 
 The QoS post-mortem — who died and why:
 
