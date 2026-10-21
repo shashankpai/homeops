@@ -75,14 +75,10 @@ banner "STEP 2 — Triage: the 30-second fork (before you type anything else)"
 
 echo -e "${YELLOW}One command, three columns, three different families:${NC}"
 echo ""
-kubectl get pods -A -o custom-columns=\
-NS:.metadata.namespace,\
-POD:.metadata.name,\
-STATUS:.status.phase,\
-RESTARTS:.status.containerStatuses[0].restartCount,\
-LAST-REASON:.status.containerStatuses[0].lastState.terminated.reason,\
-WAITING-REASON:.status.containerStatuses[0].state.waiting.reason \
-    | grep -E "NAMESPACE|payment-service|crashy|eviction" || true
+# NOTE: single-quoted — unquoted 'containerStatuses[0]' makes zsh treat [0]
+# as a glob character class and abort with 'no matches found'.
+kubectl get pods -A -o 'custom-columns=NS:.metadata.namespace,POD:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,LAST-REASON:.status.containerStatuses[0].lastState.terminated.reason,WAITING-REASON:.status.containerStatuses[0].state.waiting.reason' \
+    | grep -E "^NS |payment-service|crashy" || true
 
 echo ""
 cat << 'TRIAGE'

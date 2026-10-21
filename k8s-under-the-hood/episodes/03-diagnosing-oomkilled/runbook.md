@@ -9,14 +9,11 @@
 ## Step 0 — Triage (30 seconds, before anything else)
 
 ```bash
-kubectl get pods -A -o custom-columns=\
-NS:.metadata.namespace,\
-POD:.metadata.name,\
-STATUS:.status.phase,\
-RESTARTS:.status.containerStatuses[0].restartCount,\
-LAST-REASON:.status.containerStatuses[0].lastState.terminated.reason,\
-WAITING-REASON:.status.containerStatuses[0].state.waiting.reason
+kubectl get pods -A -o 'custom-columns=NS:.metadata.namespace,POD:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,LAST-REASON:.status.containerStatuses[0].lastState.terminated.reason,WAITING-REASON:.status.containerStatuses[0].state.waiting.reason'
 ```
+
+> Quote the argument: unquoted `containerStatuses[0]` makes zsh abort with
+> `no matches found` (bash passes it through — the difference that bites).
 
 | What you see | Family | Open instead |
 |---|---|---|

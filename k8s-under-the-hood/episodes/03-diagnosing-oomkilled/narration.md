@@ -33,11 +33,7 @@ Before logs, before describe, before anything — this one command. Get the pods
 [1:08 — show terminal]
 
 ```bash
-kubectl get pods -A -o custom-columns=\
-NS:.metadata.name,POD:.metadata.name,STATUS:.status.phase,\
-RESTARTS:.status.containerStatuses[0].restartCount,\
-LAST-REASON:.status.containerStatuses[0].lastState.terminated.reason,\
-WAITING-REASON:.status.containerStatuses[0].state.waiting.reason
+kubectl get pods -A -o 'custom-columns=NS:.metadata.namespace,POD:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,LAST-REASON:.status.containerStatuses[0].lastState.terminated.reason,WAITING-REASON:.status.containerStatuses[0].state.waiting.reason'
 ```
 
 [1:35]

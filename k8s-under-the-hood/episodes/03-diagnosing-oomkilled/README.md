@@ -6,6 +6,7 @@
 > [Episode 2 — OOMKilled vs Evicted](../02-oomkilled-vs-evicted/lab-guide.md)
 >
 > **Quick demo:** `make demo-ep03` · **Cleanup:** `make cleanup-ep03`
+> **The manual (phase-by-phase, for recording):** [lab-guide.md](lab-guide.md)
 > **The printable:** [runbook.md](runbook.md)
 
 ## Objective
