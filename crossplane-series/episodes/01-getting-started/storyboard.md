@@ -1,45 +1,44 @@
 # Episode 1 — Storyboard: Crossplane Getting Started
 
-**Target length:** 22–28 min. **Hook style:** problem-first, like under-the-hood Ep 1.
+**Target length:** ~40 min (long is fine — this is the reference/getting-started episode). **Hook style:** show-the-miracle-first, then build the understanding, like under-the-hood Ep 1.
+
+> Narration is verbatim in `narration.md` (12 phases, timestamped). This file is the production map.
 
 ## Segment map
 
-| # | Segment | Time | Visuals | Beat |
+| Phase (narration.md) | Segment | Time | Visuals | Beat |
 |---|---------|------|---------|------|
-| 1 | Cold open | 0:00–1:00 | Screen: two terminals — `terraform apply` vs `kubectl apply` | "What if your infrastructure was just... Kubernetes? No CLI, no state file, no plan. Here's Crossplane doing exactly that, live." Show drift-heal result clip as the promise. |
-| 2 | What is Crossplane + Terraform comparison | 1:00–7:00 | Diagram: Terraform (CLI → state → API) vs Crossplane (controller loop → API) | Core teaching act. Comparison table below. Land on: "Terraform automates the *creation*; Crossplane *runs* the thing." |
-| 3 | What's installed | 7:00–9:00 | Terminal: pods, CRDs, providers, functions | "The core is 150MB and a controller. Providers are packages." |
-| 4 | First managed resource | 9:00–13:00 | `kubectl apply` of Object manifests; READY/SYNCED | "This is a namespace defined as a managed resource. It's Terraform without Terraform." |
-| 5 | Drift fight | 13:00–17:00 | Delete the ConfigMap; heal loop timer on screen | The "wow" moment #1. "I just fought the control plane. The control plane won." |
-| 6 | Platform API (XRD + Composition) | 17:00–22:00 | XRD → new kind; Composition pipeline; WebApp YAML | The "wow" moment #2: 9-line YAML → namespace + deployment + service + configmap. `crossplane beta trace`. |
-| 7 | Cleanup power + recap | 22:00–25:00 | `kubectl delete webapp` → everything gone | "Delete the claim on the API, the platform cleans up." Recap 3 ideas. Tease Ep 2. |
+| 1 | Cold open | 0:00–1:30 | Split terminals: hand-delete ConfigMap vs ...it heals | The promise. "Nobody ran anything." |
+| 2 | The problem | 1:30–4:00 | Pipeline diagram; state file liabilities | Pipeline model's three structural flaws; consumers read HCL |
+| 3 | Control plane model | 4:00–7:00 | Deployment loop reused for infra; side-by-side diagram | The one-sentence thesis. Honesty beat: "it's operators." |
+| 4 | Install | 7:00–9:00 | helm upgrade --install; CRD count | "One release. Everything else arrives as packages." v2 version note |
+| 5 | Providers | 9:00–13:00 | Provider apply; watch INSTALLED/HEALTHY; new CRD + Deployment appear | Package manager working live: image → CRDs + controllers + SA |
+| 6 | ProviderConfig | 13:00–15:00 | The 5-line InjectedIdentity file | Credentials as API resources; vs creds-on-laptop |
+| 7 | First managed resources | 15:00–19:00 | Object YAML anatomy; READY/SYNCED; annotations | Spec down, status up. "kubectl get IS terraform state list" |
+| 8 | Drift fight | 19:00–23:30 | 3 attacks: delete → heal; edit → revert; delete MR → cascade | The centerpiece. Timer overlay. removalPolicy teaser |
+| 9 | XRD | 23:30–26:30 | XRD YAML; kubectl explain | "Kubernetes learned a new word." API vs modules |
+| 10 | Composition + functions | 26:30–31:00 | Pipeline YAML; offline `crossplane beta render` | Functions render, controllers create. Offline render = unit-testing the platform |
+| 11 | WebApp payoff | 31:00–36:00 | 9-line YAML → environment; trace tree; patch replicas 2→4; curl; delete → clean | Update = chain of control loops. Trace = incident response |
+| 12 | Verdict: vs Terraform | 36:00–40:00 | Comparison table; litmus test | Both columns honestly; "who notices a 2am change?"; Terraform built this lab |
 
-## Segment 2 — on-screen comparison table (the teaching core)
+## Assets to prepare
 
-| | Terraform | Crossplane |
-|---|---|---|
-| Model | CLI run: plan → apply → done | Control plane: controllers reconcile forever |
-| State | State file (lock, drift, storage) | Live cluster state (`kubectl` is your view) |
-| Drift detection | Next `plan` (or cron) | Continuous (seconds to ~1 min) |
-| API | HCL, files, providers as code | Kubernetes CRDs, native `kubectl`/GitOps |
-| Who triggers changes | Human/CI runs CLI | Apply to API, controllers act |
-| Abstraction | Modules (files you call) | XRD + Composition (APIs you *publish*) |
-| Ecosystem | 15+ years, huge registry | Younger; cloud + Kubernetes + functions |
-| Great at | Big one-time builds, existing orgs | Ongoing ops, platform teams, self-service infra |
+- Pipeline-vs-control-plane loop diagram (Phase 2–3)
+- Provider package anatomy: image → [CRDs, controllers, SA] (Phase 5)
+- Composition render flow: XR → function(s) → rendered resources → controller creates (Phase 10)
+- Timer overlay for the drift heal (Phase 8)
+- Comparison table graphic (Phase 12) — also the standalone Short
+- End card: series roadmap (ROADMAP.md) + repo link
 
-**When to use which (say this verbatim-ish):**
-- Use **Terraform** for one-shot provisioning, brownfield, teams already fluent in HCL.
-- Use **Crossplane** when infra is a *product* consumed by many teams, when you want GitOps/`kubectl` as the only interface, and when continuous reconciliation matters.
-- They coexist fine: Terraform builds the cluster, Crossplane runs on it. (Our lab: Terraform built these VMs — nice callback to under-the-hood.)
+## Cut-downs / derivatives
 
-## B-roll / assets to prepare
+- Short: "Crossplane vs Terraform in 60 seconds" (Phase 12)
+- Short: "I deleted it and the cluster healed it" (Phase 8)
+- Short: "9 lines of YAML did all this" (Phase 11)
 
-- Terraform-vs-Crossplane loop diagram (segment 2)
-- Composition pipeline diagram (segment 6)
-- Timer overlay for the drift-heal wait (segment 5)
-- End card: series roadmap (ROADMAP.md)
+## Retakes & timing notes
 
-## Retakes
-
-- Segment 5 is timing-sensitive: rehearse the heal wait once before recording; if >45s, cut to time-lapse.
-- Segment 6 XRD must be fresh — record before any other take created a WebApp.
+- Phase 8 heal can take up to ~60s — rehearse once; if slow, force a provider pod restart off-camera, or cut to time-lapse.
+- Phase 5: record the Provider watch from a clean install (uninstall/reinstall) so `INSTALLED/HEALTHY` flips on camera.
+- Phase 11: the WebApp must be fresh — `make cleanup-ep01` between takes; the namespace must NOT pre-exist.
+- Two-terminal cold open: pre-position both windows; heal clip should be pre-recorded as backup.

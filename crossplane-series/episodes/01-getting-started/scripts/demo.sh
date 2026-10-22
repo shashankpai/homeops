@@ -5,10 +5,13 @@
 # Flow (assumes `make crossplane-install` has been run):
 #   0. What did we install? (core pods, CRDs, provider, functions)
 #   1. Managed resources: a Namespace + ConfigMap via provider-kubernetes
-#   2. Drift: delete the ConfigMap out-of-band, watch Crossplane heal it
+#   2. Drift, three attacks: delete -> heal; edit -> revert; delete MR -> cascade
 #   3. Platform API: XRD + Composition -> `kind: WebApp`
 #   4. Create a WebApp: one resource becomes a whole environment
-#   5. Trace + cleanup-on-delete: `crossplane beta trace`, delete the WebApp
+#   5. Update: patch spec.replicas, watch the chain of control loops
+#   6. Trace + cleanup-on-delete: `crossplane beta trace`, delete the WebApp
+#
+# Manual alternative: every command here is in lab-guide.md, section by section.
 # =============================================================================
 set -euo pipefail
 
@@ -61,7 +64,32 @@ for i in 1 2 3 4 5 6; do
     echo "  check $i: not yet..."; sleep 5
 done
 kubectl -n demo-team-a get configmap welcome
-pause "Terraform needs 'terraform plan/apply' to notice. Crossplane never stops watching."
+pause "Attack 1 done (delete -> recreate). Terraform needs a plan run to notice. Crossplane never stops watching."
+
+echo ""
+echo "Attack 2 — EDIT instead of delete (the drift pipelines are blind to):"
+kubectl -n demo-team-a patch configmap welcome \
+    -p '{"data":{"message":"edited by a human, defiantly"}}'
+echo "  defied. Now waiting for a reconcile to revert it (up to ~60s)..."
+for i in $(seq 1 15); do
+    MSG=$(kubectl -n demo-team-a get configmap welcome -o jsonpath='{.data.message}' 2>/dev/null || true)
+    if echo "$MSG" | grep -q "Crossplane"; then
+        echo -e "${GREEN}Reverted after ${i} checks — the edit was overwritten.${NC}"
+        break
+    fi
+    sleep 5
+done
+kubectl -n demo-team-a get configmap welcome -o jsonpath='{.data.message}'; echo
+
+echo ""
+echo "Attack 3 — delete the MANAGED RESOURCE (the Crossplane object):"
+kubectl delete object demo-team-a-welcome
+kubectl -n demo-team-a get configmap welcome 2>&1 || true
+echo -e "${GREEN}Cascade: removing the MR removed the real object (default removalPolicy: Delete).${NC}"
+pause "For attack 3 in reverse (removalPolicy: Orphan) see lab-guide §13 — manual only."
+
+# Recreate the ConfigMap MR so later steps stay consistent
+kubectl apply -f "$EP_DIR/manifests/01-managed-resources.yaml"
 
 # =============================================================================
 banner "Step 3 — Build a platform API (XRD + Composition)"
@@ -91,7 +119,21 @@ kill $WATCH_PID 2>/dev/null || true
 pause "One 9-line YAML. No namespace to create, no Deployment YAML to copy-paste."
 
 # =============================================================================
-banner "Step 5 — Trace it, then delete it"
+banner "Step 5 — Update: patch the WebApp, watch the chain of loops"
+echo "Patching spec.replicas 2 -> 4 (a chain fires: XR -> re-render -> composed Deployment -> rollout):"
+kubectl patch webapp payments -n default --type merge -p '{"spec":{"replicas":4}}'
+echo ""
+echo "Watching the composed Deployment scale:"
+for i in $(seq 1 12); do
+    DESIRED=$(kubectl -n payments-team get deploy/webapp -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 0)
+    [ "$DESIRED" = "4" ] && break
+    sleep 5
+done
+kubectl -n payments-team get deploy/webapp
+pause "That was 'kubectl patch' scaling an environment. No pipeline ran."
+
+# =============================================================================
+banner "Step 6 — Trace it, then delete it"
 if command -v crossplane >/dev/null; then
     crossplane beta trace webapp/payments -n default
 else
