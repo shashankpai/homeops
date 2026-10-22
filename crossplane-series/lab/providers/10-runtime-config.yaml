@@ -1,0 +1,10 @@
+# DeploymentRuntimeConfig — gives provider-kubernetes pods a fixed, predictable
+# service account name so the RBAC binding below can reference it.
+apiVersion: pkg.crossplane.io/v2
+kind: DeploymentRuntimeConfig
+metadata:
+  name: provider-kubernetes
+spec:
+  serviceAccountTemplate:
+    metadata:
+      name: provider-kubernetes

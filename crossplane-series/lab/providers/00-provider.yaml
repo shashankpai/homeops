@@ -1,0 +1,11 @@
+# Provider — provider-kubernetes (manage in-cluster objects as managed resources)
+apiVersion: pkg.crossplane.io/v2
+kind: Provider
+metadata:
+  name: provider-kubernetes
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v1.0.0
+  runtimeConfigRef:
+    apiVersion: pkg.crossplane.io/v2
+    kind: DeploymentRuntimeConfig
+    name: provider-kubernetes

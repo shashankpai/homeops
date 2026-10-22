@@ -1,0 +1,10 @@
+# ProviderConfig — provider-kubernetes uses its own service account
+# (InjectedIdentity). No credentials, no secrets — the talking point:
+# "Crossplane can manage anything in this cluster out of the box."
+apiVersion: kubernetes.crossplane.io/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  credentials:
+    source: InjectedIdentity

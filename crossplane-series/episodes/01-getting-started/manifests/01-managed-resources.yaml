@@ -1,0 +1,40 @@
+# Episode 1 — Part A: first managed resources (provider-kubernetes)
+# Crossplane managing Kubernetes itself: a Namespace and a ConfigMap
+# defined declaratively and kept in sync by the provider's reconcile loop.
+
+---
+# A Namespace, but as a Crossplane managed resource (Object)
+apiVersion: kubernetes.crossplane.io/v1alpha2
+kind: Object
+metadata:
+  name: demo-team-a
+spec:
+  providerConfigRef:
+    name: default
+  forProvider:
+    manifest:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: demo-team-a
+        labels:
+          managed-by: crossplane
+---
+# A ConfigMap inside that namespace — note manifest.template sets the
+# namespace field because the provider runs cluster-scoped.
+apiVersion: kubernetes.crossplane.io/v1alpha2
+kind: Object
+metadata:
+  name: demo-team-a-welcome
+spec:
+  providerConfigRef:
+    name: default
+  forProvider:
+    manifest:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: welcome
+        namespace: demo-team-a
+      data:
+        message: "Provisioned by Crossplane, not by a human"

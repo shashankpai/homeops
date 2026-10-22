@@ -24,6 +24,12 @@ homeops/
       02-...
     README.md
 
+  crossplane-series/         # Crossplane v2 video series (reuses the
+                             # k8s-under-the-hood K3s lab)
+    episodes/01-getting-started/
+    lab/                     # install/verify/uninstall scripts + providers
+    README.md
+
   .github/                   # CI/CD workflows
 ```
 
@@ -32,6 +38,7 @@ homeops/
 - **Kairos setup?** → See [`kairos/README.md`](kairos/README.md) and [`kairos/docs/`](kairos/docs/)
 - **Homelab infrastructure?** → See [`homelab/README.md`](homelab/README.md)
 - **Learning episodes?** → See [`learning/README.md`](learning/README.md)
+- **Crossplane series?** → See [`crossplane-series/README.md`](crossplane-series/README.md)
 
 ## Current state
 

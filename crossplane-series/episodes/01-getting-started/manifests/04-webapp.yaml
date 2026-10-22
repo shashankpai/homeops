@@ -1,0 +1,11 @@
+# Episode 1 — Part B: the "developer experience".
+# One tiny resource = a full environment. This is the payoff moment:
+# show how small this YAML is compared to what it creates.
+apiVersion: demo.crossplane.io/v1alpha1
+kind: WebApp
+metadata:
+  name: payments
+  namespace: default
+spec:
+  slug: payments-team
+  replicas: 2

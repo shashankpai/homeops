@@ -1,0 +1,42 @@
+# Episode 1 — Part B: the platform API.
+# A namespaced CompositeResourceDefinition: `kind: WebApp` in group
+# demo.crossplane.io. This is the API your platform team publishes —
+# teams create a WebApp and get a full environment composed for them.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: webapps.demo.crossplane.io
+spec:
+  group: demo.crossplane.io
+  names:
+    kind: WebApp
+    plural: webapps
+    listKind: WebAppList
+    singular: webapp
+    shortNames:
+      - web
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                # Human-friendly slug: becomes the namespace + resource prefix
+                slug:
+                  type: string
+                  description: "Short name for this app — used as the namespace"
+                # How many replicas the Deployment gets
+                replicas:
+                  type: integer
+                  default: 2
+                # Which image to run — defaults in the Composition
+                image:
+                  type: string
+                  description: "Container image; defaults to podinfo"
+              required: ["slug"]
