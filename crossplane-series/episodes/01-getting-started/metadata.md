@@ -21,15 +21,15 @@ Everything in the video is in the repo: install scripts, runnable lab guide with
 01:30 The problem with infrastructure-as-a-pipeline
 04:00 The control plane model (you already know it)
 07:00 Installing Crossplane (one Helm release)
-09:00 Providers: what they actually are
-13:00 Credentials: ProviderConfig & InjectedIdentity
-15:00 Your first managed resources (anatomy, READY/SYNCED)
-19:00 The drift fight: three attacks, three correct responses
-23:30 XRDs: publish your own Kubernetes API
-26:30 Compositions & functions (and offline render in CI)
-31:00 The payoff: 9 lines of YAML → a whole environment
-36:00 The honest verdict: Crossplane vs Terraform
-39:40 What's next
+09:00 Providers: what they actually are (vocabulary, workers, identity)
+14:00 ProviderConfig: identity without secrets (InjectedIdentity)
+17:00 Managed resources: the atom of Crossplane (full anatomy)
+23:00 The drift fight: three attacks, three correct responses
+27:30 XRDs: publish your own Kubernetes API
+30:30 Compositions & functions (and offline render in CI)
+35:00 The payoff: 9 lines of YAML → a whole environment
+40:00 The honest verdict: Crossplane vs Terraform
+43:40 What's next
 
 🔗 Repo: github.com/shashankpai/homeops → crossplane-series
 🖥 Lab: same 3-node K3s cluster as the "K8s Under the Hood" series
