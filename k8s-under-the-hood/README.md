@@ -144,6 +144,27 @@ make teardown
 | 9 | Kubernetes Probes — how a healthy container gets restarted | Planned |
 | 10 | Pod Pending — why Kubernetes refuses to schedule your Pod | Planned |
 
+### Observability Arc — The Monitor Under the Hood (in production)
+
+A 9-episode sub-series on the monitoring stack itself: foundations for
+newcomers (the pipeline, the four observers, monitoring with intent), then
+the war stories (cardinality explosion, the alert nobody saw, the dead
+man's switch, graph holes, source disagreement, the average lie).
+
+| Ep | Topic | Status |
+|----|-------|--------|
+| 01 | The Life of a Metric — from kernel to pixel | In Progress |
+| 02 | The Four Observers — who measures what | Planned |
+| 03 | Monitoring With Intent — golden signals | Planned |
+| 04 | Cardinality Explosion | Planned |
+| 05 | The Alert Nobody Saw | Planned |
+| 06 | The Dead Man's Switch | Planned |
+| 07 | Why Your Graph Has Holes | Planned |
+| 08 | Three Numbers, One Pod | Planned |
+| 09 | The Average Lie | Planned |
+
+Full lineup, durations, payoff map and backlog: [episodes/observability/README.md](episodes/observability/README.md) · `make demo-obs01`
+
 > Beyond Season 3: candidate future seasons (networking, storage, control
 > plane, failure cascades) are captured in [ROADMAP.md](ROADMAP.md).
 

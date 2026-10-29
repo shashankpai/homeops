@@ -70,7 +70,8 @@ audience has followed through the fundamentals.
 
 - **ImagePullBackOff** — registry auth, rate limits, image GC (high search volume, easy episode)
 - **Sidecar containers** — init containers vs native sidecars, the restart-policy trap
-- **Cardinality explosion** — Prometheus dying slowly from too many labels (fits the observability lab)
+- **Cardinality explosion** — ~~candidate~~ **GRADUATED**: now Observability Arc Ep 04
+  ([episodes/observability/README.md](episodes/observability/README.md))
 - **seccomp / RuntimeClass** — what the container can't do (security season seed)
 
 ---

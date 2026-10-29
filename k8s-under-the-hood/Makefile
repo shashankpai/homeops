@@ -1,6 +1,7 @@
 .PHONY: setup teardown verify \
          demo-ep01 cleanup-ep01 demo-ep02 cleanup-ep02 \
-         demo-ep03 cleanup-ep03 demo-ep04 cleanup-ep04 help \
+         demo-ep03 cleanup-ep03 demo-ep04 cleanup-ep04 \
+         demo-obs01 cleanup-obs01 help \
          tf-init tf-apply tf-destroy \
          templates \
          k3s-install observability-deploy \
@@ -45,6 +46,10 @@ help:
 	@echo "$(YELLOW)Episode 4 - OOMKill Prevention (finale):$(NC)"
 	@echo "  make demo-ep04      - The full fix arc + live 90% alert firing"
 	@echo "  make cleanup-ep04   - Delete the right-sized variant"
+	@echo ""
+	@echo "$(YELLOW)Observability Arc - Episode 01 (Foundations):$(NC)"
+	@echo "  make demo-obs01     - Trace one metric: pixel -> kernel (read-only descent)"
+	@echo "  make cleanup-obs01  - No-op (this episode deploys nothing)"
 	@echo ""
 	@echo "$(YELLOW)Utilities:$(NC)"
 	@echo "  make help           - Show this help message"
@@ -267,3 +272,16 @@ cleanup-ep04:
 	bash episodes/04-preventing-oomkills/scripts/cleanup.sh
 	@echo "$(GREEN)✓ Episode 4 cleanup complete$(NC)"
 	@echo "$(YELLOW)Lab still running; payment-service untouched.$(NC)"
+
+# ============================================================================
+# Observability Arc (episodes/observability/)
+# ============================================================================
+
+demo-obs01:
+	@echo "$(GREEN)Running Observability Ep 01 - The Life of a Metric...$(NC)"
+	@echo "$(YELLOW)Read-only descent: pixel -> query -> vault -> scrape -> exposition -> kernel$(NC)"
+	bash episodes/observability/01-the-life-of-a-metric/scripts/demo.sh
+
+cleanup-obs01:
+	@echo "$(GREEN)Cleaning up Observability Ep 01...$(NC)"
+	bash episodes/observability/01-the-life-of-a-metric/scripts/cleanup.sh
