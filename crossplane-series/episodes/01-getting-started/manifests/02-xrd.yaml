@@ -27,10 +27,10 @@ spec:
             spec:
               type: object
               properties:
-                # Human-friendly slug: becomes the namespace + resource prefix
+                # Human-friendly slug: stamped into the app's ConfigMap
                 slug:
                   type: string
-                  description: "Short name for this app — used as the namespace"
+                  description: "Short name for this app — recorded in its ConfigMap"
                 # How many replicas the Deployment gets
                 replicas:
                   type: integer

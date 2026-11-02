@@ -13,8 +13,8 @@ brew install helm
 helm version
 
 # crossplane CLI v2 — matches the installed Crossplane major.minor
-# macOS (homebrew):
-brew install crossplane-cli
+# Official install script (downloads the latest stable binary to ./crossplane):
+# curl -sL "https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh" | sh
 # or download a specific version:
 # curl -sL "https://releases.crossplane.io/stable/v2.0.0/bin/darwin_amd64/crossplane" \
 #   -o /usr/local/bin/crossplane && chmod +x /usr/local/bin/crossplane

@@ -12,8 +12,11 @@
 
 **Two ways to run this demo:**
 
-- **Guided** — `make demo-ep01`: the script walks every step with pauses
-  between them (good for a first pass; every command is printed as it runs)
+- **Guided (make)** — `make demo-ep01` runs the whole demo with pauses
+  between steps (every command is printed as it runs). Every phase also has
+  its own target (`make xp-core`, `make xp-provider`, `make demo-ep01-step
+  STEP=2`, ...) — each section below shows its **Make** and **Manual** form
+  side by side. Both do the same thing.
 - **Manual, section by section** — follow Sections 7–17 below and run each
   command by hand. Better for recording: you control the camera timing at
   every step, pause to explain, and can re-take any section without
@@ -32,27 +35,37 @@ export KUBECONFIG="$HOME/.kube/config-k8suth"
 
 ## Table of Contents
 
-- [1. Episode Overview](#1-episode-overview)
-- [2. Learning Objectives](#2-learning-what-youll-be-able-to-do)
-- [3. Lab Architecture](#3-lab-architecture)
-- [4. Prerequisites](#4-prerequisites)
-- [5. Concept Deep-Dive A — The Problem, and Two Mental Models](#5-concept-deep-dive-a--the-problem-and-two-mental-models)
-- [6. Concept Deep-Dive B — Crossplane's Building Blocks](#6-concept-deep-dive-b--crossplanes-building-blocks)
-- [7. Install Crossplane Core](#7-install-crossplane-core)
-- [8. What Just Got Installed — a Tour](#8-what-just-got-installed--a-tour)
-- [9. Install a Provider (and what a provider actually IS)](#9-install-a-provider-and-what-a-provider-actually-is)
-- [10. Credentials: ProviderConfig and InjectedIdentity](#10-credentials-providerconfig-and-injectedidentity)
-- [11. Your First Managed Resources](#11-your-first-managed-resources)
-- [12. The Reconcile Loop — Watch It Work (Drift Fight)](#12-the-reconcile-loop--watch-it-work-drift-fight)
-- [13. Control the Lifecycle (updates, removalPolicy, orphan vs delete)](#13-control-the-lifecycle-updates-removalpolicy-orphan-vs-delete)
-- [14. Publish Your Own API — the XRD](#14-publish-your-own-api--the-xrd)
-- [15. The Composition — a Recipe Made of Functions](#15-the-composition--a-recipe-made-of-functions)
-- [16. Use the API — Create, Trace, Update, Delete a WebApp](#16-use-the-api--create-trace-update-delete-a-webapp)
-- [17. Crossplane vs Terraform — the Full Comparison](#17-crossplane-vs-terraform--the-full-comparison)
-- [18. Cleanup / Reset](#18-cleanup--reset)
-- [Troubleshooting](#troubleshooting)
-- [Appendix A — Crossplane v1 vs v2 (why old tutorials mislead)](#appendix-a--crossplane-v1-vs-v2-why-old-tutorials-mislead)
-- [Appendix B — Glossary](#appendix-b--glossary)
+- [Crossplane Getting Started — Infrastructure as Kubernetes APIs](#crossplane-getting-started--infrastructure-as-kubernetes-apis)
+  - [Lab Guide \& Runbook](#lab-guide--runbook)
+  - [Table of Contents](#table-of-contents)
+  - [1. Episode Overview](#1-episode-overview)
+  - [2. Learning: What You'll Be Able To Do](#2-learning-what-youll-be-able-to-do)
+  - [3. Lab Architecture](#3-lab-architecture)
+  - [4. Prerequisites](#4-prerequisites)
+    - [One-time install of the series components](#one-time-install-of-the-series-components)
+  - [5. Concept Deep-Dive A — The Problem, and Two Mental Models](#5-concept-deep-dive-a--the-problem-and-two-mental-models)
+    - [The problem with infrastructure-as-a-pipeline](#the-problem-with-infrastructure-as-a-pipeline)
+    - [The control plane model](#the-control-plane-model)
+    - [Where each model wins (preview — full verdict in Section 17)](#where-each-model-wins-preview--full-verdict-in-section-17)
+  - [6. Concept Deep-Dive B — Crossplane's Building Blocks](#6-concept-deep-dive-b--crossplanes-building-blocks)
+    - [Packages (things you *install*)](#packages-things-you-install)
+    - [Resources (things you *create*)](#resources-things-you-create)
+    - [The vocabulary map (Terraform → Crossplane)](#the-vocabulary-map-terraform--crossplane)
+  - [7. Install Crossplane Core](#7-install-crossplane-core)
+  - [8. What Just Got Installed — a Tour](#8-what-just-got-installed--a-tour)
+  - [9. Install a Provider (and what a provider actually IS)](#9-install-a-provider-and-what-a-provider-actually-is)
+  - [10. Credentials: ProviderConfig and InjectedIdentity](#10-credentials-providerconfig-and-injectedidentity)
+  - [11. Your First Managed Resources](#11-your-first-managed-resources)
+  - [12. The Reconcile Loop — Watch It Work (Drift Fight)](#12-the-reconcile-loop--watch-it-work-drift-fight)
+  - [13. Control the Lifecycle (updates, deletionPolicy, orphan vs delete)](#13-control-the-lifecycle-updates-deletionpolicy-orphan-vs-delete)
+  - [14. Publish Your Own API — the XRD](#14-publish-your-own-api--the-xrd)
+  - [15. The Composition — a Recipe Made of Functions](#15-the-composition--a-recipe-made-of-functions)
+  - [16. Use the API — Create, Trace, Update, Delete a WebApp](#16-use-the-api--create-trace-update-delete-a-webapp)
+  - [17. Crossplane vs Terraform — the Full Comparison](#17-crossplane-vs-terraform--the-full-comparison)
+  - [18. Cleanup / Reset](#18-cleanup--reset)
+  - [Troubleshooting](#troubleshooting)
+  - [Appendix A — Crossplane v1 vs v2 (why old tutorials mislead)](#appendix-a--crossplane-v1-vs-v2-why-old-tutorials-mislead)
+  - [Appendix B — Glossary](#appendix-b--glossary)
 
 ---
 
@@ -70,7 +83,7 @@ The arc:
 3. **Manage a resource** — a namespace and ConfigMap via provider-kubernetes,
    with zero credentials
 4. **Fight the control plane** — delete things behind its back, watch it heal
-5. **Own the lifecycle** — update specs, learn `removalPolicy` (orphan vs delete)
+5. **Own the lifecycle** — update specs, learn `deletionPolicy` (orphan vs delete)
 6. **Publish an API** — XRD + Composition → a new `kind: WebApp` that any
    team can create, which composes a whole environment
 7. **Operate it** — trace, debug, clean teardown
@@ -91,14 +104,14 @@ By the end of this episode you can:
   exit) and a **control plane** (Crossplane: controllers reconcile forever)
 - Explain why Crossplane has **no state file**, and what it uses instead
   (the API server + level-triggered reconciliation)
-- Name all four Crossplane **package types** (Provider, Configuration,
-  Function — and what each delivers)
+- Name the three Crossplane **package types** (Provider, Function,
+  Configuration — and what each delivers)
 - Install Crossplane and a provider, and explain the **conditions**
   (`Installed`, `Healthy`) you watched along the way
 - Read a **managed resource** spec (`forProvider`, `providerConfigRef`,
-  `removalPolicy`) and its conditions (`Ready`, `Synced`)
+  `deletionPolicy`) and its conditions (`Ready`, `Synced`)
 - Explain **drift** in both worlds, and demonstrate Crossplane healing it live
-- Choose between `removalPolicy: Delete` and `Orphan` and say when each fits
+- Choose between `deletionPolicy: Delete` and `Orphan` and say when each fits
 - Explain what an **XRD** is, what a **Composition** is, and what a
   **composition function** pipeline does
 - Create, trace, update, and safely delete a **composite resource** (WebApp)
@@ -114,7 +127,6 @@ keep that irony in your pocket for segment 17):
                      ┌────────────────────────────────────┐
                      │  master (192.168.1.81, pve4)       │
                      │  K3s server (API + etcd + sched)  │
-                     │  Prometheus :30900 / Grafana :30300│
                      │  crossplane core pod               │
                      │  provider-kubernetes pod           │
                      │  function pods (×2)                │
@@ -149,20 +161,23 @@ Three controller loops to keep straight in your head (and on camera):
 ## 4. Prerequisites
 
 - The under-the-hood lab is up: `cd ../k8s-under-the-hood && make verify`
-- `kubectl` v1.36+, `helm` v3.14+
-- `crossplane` CLI v2 (`brew install crossplane-cli`) — used for
-  `crossplane beta trace` and offline rendering; the demo degrades
-  gracefully if it's missing, but install it
+- `kubectl` matching the lab's K3s minor, `helm` v3.14+
+- `crossplane` CLI v2 — install with
+  `curl -sL "https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh" | sh`
+  (then move the binary onto your `PATH`). Used for `crossplane beta trace`
+  and offline rendering; the demo degrades gracefully if it's missing, but
+  install it
 - Internet from controller (`charts.crossplane.io`) and from nodes
   (`xpkg.upbound.io`, ghcr.io)
 - Versions pinned in `lab/versions.env` — check them before recording:
   `helm search repo crossplane-stable/crossplane --versions | head -3`
 
 > **Manifest/version caveat:** this guide targets **Crossplane v2**
-> (`apiextensions.crossplane.io/v2`, namespaced XRs, `mode: Pipeline`
-> compositions, `removalPolicy`). If your installed chart is a different
-> minor, dry-run everything offline first:
-> `crossplane beta render manifests/04-webapp.yaml manifests/03-composition.yaml`
+> (XRD `apiextensions.crossplane.io/v2`, namespaced XRs, `mode: Pipeline`
+> compositions; packages stay on `pkg.crossplane.io/v1`). If your installed
+> chart is a different minor, dry-run everything offline first:
+> `crossplane render episodes/01-getting-started/manifests/04-webapp.yaml episodes/01-getting-started/manifests/03-composition.yaml lab/providers/40-functions.yaml`
+> (use `crossplane beta render` on older CLIs).
 > Fix schema mismatches *before* recording, never live.
 
 ### One-time install of the series components
@@ -170,11 +185,20 @@ Three controller loops to keep straight in your head (and on camera):
 Guided:
 
 ```bash
-make crossplane-install   # does everything in Sections 7, 9, 10 + waits
+make crossplane-install   # everything in Sections 7, 9, 10, 15 (functions) + waits
 make verify               # health check
 ```
 
-Manual — Sections 7, 9, 10 below, every command spelled out.
+Or one phase at a time (identical to the manual sections):
+
+```bash
+make xp-core              # Section 7
+make xp-provider          # Section 9
+make xp-providerconfig    # Section 10
+make xp-functions         # Section 15 (functions)
+```
+
+Manual — Sections 7, 9, 10, 15 below, every command spelled out.
 
 ---
 
@@ -244,7 +268,7 @@ human → kubectl apply → API server (etcd) → controllers watch → reconcil
 
 *(Diagram + narration. Everything below appears live in Sections 7–16.)*
 
-Four packages + two resource families. That's the whole vocabulary.
+Three package kinds + two resource families. That's the whole vocabulary.
 
 ### Packages (things you *install*)
 
@@ -277,15 +301,15 @@ reports progress in the Provider's **status conditions** (`Installed`,
 | module | XRD + Composition | module = files you call; XRD = an API you publish |
 | `terraform plan` | `kubectl diff` / `crossplane render` | render works fully offline |
 | `terraform apply` | `kubectl apply` | and then it *keeps applying*, continuously |
-| `terraform destroy` | `kubectl delete` (respecting `removalPolicy`) | per-resource orphan vs delete choice |
+| `terraform destroy` | `kubectl delete` (respecting `deletionPolicy`) | per-resource orphan vs delete choice |
 
 ---
 
 ## 7. Install Crossplane Core
 
-Guided: `make crossplane-install` (then skip to Section 8 for the tour).
+**Make:** `make xp-core` (or `make crossplane-install` for all install phases).
 
-Manual:
+**Manual:**
 
 ```bash
 # 1. Add the Helm repo (official charts)
@@ -321,6 +345,8 @@ kubectl get deployment -n crossplane-system crossplane -o \
 
 ## 8. What Just Got Installed — a Tour
 
+**Make:** `make demo-ep01-step STEP=0` (or `make verify`).  **Manual:**
+
 ```bash
 kubectl get pods -n crossplane-system
 # NAME                          READY   STATUS    AGE
@@ -331,9 +357,11 @@ kubectl get pods -n crossplane-system
 kubectl get crd | grep -c crossplane
 
 # The core object types — point at these one by one:
-kubectl get providers        # none yet — next section
-kubectl get functions        # none yet — Section 15
-kubectl get providerconfig   # none yet — Section 10
+# Present only after `make crossplane-install` (or Sections 9, 10, 15 by hand).
+# On a core-only install these are all empty:
+kubectl get providers
+kubectl get functions
+kubectl get providerconfigs.kubernetes.crossplane.io
 ```
 
 > **On camera:** "Notice what ISN'T here: no state file, no CLI daemon, no
@@ -342,7 +370,9 @@ kubectl get providerconfig   # none yet — Section 10
 
 ## 9. Install a Provider (and what a provider actually IS)
 
-Manual (mirrors what `make crossplane-install` does):
+**Make:** `make xp-provider` (runtime config, RBAC, provider, waits for Healthy).
+
+**Manual** (mirrors what `make xp-provider` does):
 
 ```bash
 # a. Runtime config — fixes the provider's ServiceAccount name so our RBAC
@@ -361,7 +391,7 @@ Now watch the package manager work — this is worth showing slowly:
 ```bash
 kubectl get provider provider-kubernetes -w
 # PACKAGE                          INSTALLED   HEALTHY   ...
-# provider-kubernetes:v1.0.0       True        True
+# provider-kubernetes:v1.2.0       True        True
 
 # While that goes Healthy, a Deployment appeared out of nowhere:
 kubectl get deployments -n crossplane-system
@@ -394,6 +424,8 @@ to rotate on camera, every viewer can run it — and the drift demo (Section
 mental model then transfers to `provider-aws` in Season 5.
 
 ## 10. Credentials: ProviderConfig and InjectedIdentity
+
+**Make:** `make xp-providerconfig`.  **Manual:** `kubectl apply -f lab/providers/30-provider-config.yaml`
 
 Before the provider can manage anything, it needs to know *as whom*. That's
 the `ProviderConfig`:
@@ -439,7 +471,7 @@ The alternatives (name them, don't demo them):
 
 ## 11. Your First Managed Resources
 
-Guided: `make demo-ep01` step 1. Manual:
+**Make:** `make demo-ep01-step STEP=1`.  **Manual:**
 
 ```bash
 kubectl apply -f episodes/01-getting-started/manifests/01-managed-resources.yaml
@@ -496,11 +528,14 @@ kubectl -n demo-team-a get configmap welcome -o yaml | head -20
   it means endpoints resolve). Some MRs are Ready-but-not-yet-Synced and
   vice versa — always check both.
 
-Show the ownership marks Crossplane left on the ConfigMap itself:
+Show the ownership marks Crossplane left on the *managed resource* (not on
+the ConfigMap — the ConfigMap only records the provider as its field manager):
 
 ```bash
-kubectl -n demo-team-a get configmap welcome -o yaml | grep -A6 metadata
-# annotations/labels: crossplane.io/external-name, external-create-succeeded...
+kubectl get object demo-team-a-welcome -o jsonpath='{.metadata.annotations}'
+# crossplane.io/external-name, external-create-succeeded, ...
+kubectl -n demo-team-a get configmap welcome -o jsonpath='{.metadata.managedFields[*].manager}'
+# provider-kubernetes/demo-team-a-welcome
 ```
 
 > **On camera:** "`forProvider` is the only thing I wrote. `atProvider` and
@@ -509,6 +544,8 @@ kubectl -n demo-team-a get configmap welcome -o yaml | grep -A6 metadata
 
 ## 12. The Reconcile Loop — Watch It Work (Drift Fight)
 
+**Make:** `make demo-ep01-step STEP=2` (runs all three attacks, with pauses).  **Manual:** below.
+
 Theory first (30 seconds, then prove it):
 
 - The provider doesn't watch *your apply* — it watches the **Object** in
@@ -516,8 +553,16 @@ Theory first (30 seconds, then prove it):
 - The loop is **level-triggered**: "is actual == desired?" — it doesn't care
   *how* they diverged. Console click, colleague's kubectl, provider bug —
   same reaction: fix it.
-- Frequency: the provider watches cluster events plus a periodic poll
-  (~1 min worst case for provider-kubernetes).
+- Frequency: provider-kubernetes detects drift by **polling** each
+  resource. Its default interval is long (minutes), so this lab sets
+  `--poll=30s` in `lab/providers/10-runtime-config.yaml`. Measured on this
+  lab: a deleted ConfigMap healed in ~10s; edits revert within one poll.
+- **Provider version matters.** This lab pins provider-kubernetes
+  **v1.2.0**, where server-side apply is on by default and drift is
+  detected on the fields in `forProvider.manifest`. Older versions
+  (e.g. v1.0.0) only compare against the `last-applied-configuration`
+  annotation, so a `kubectl patch` edit is **never reverted** (delete still
+  heals).
 
 The demo — do it by hand, it's better live:
 
@@ -563,7 +608,9 @@ kubectl -n demo-team-a get configmap welcome    # NotFound — cascade
 > triggered control loop. Terraform's answer to all three is 'run plan and
 > find out'."
 
-## 13. Control the Lifecycle (updates, removalPolicy, orphan vs delete)
+## 13. Control the Lifecycle (updates, deletionPolicy, orphan vs delete)
+
+**Make:** none — this phase is manual-only (the commands below are the whole demo).
 
 **Updates** propagate like everything else:
 
@@ -576,13 +623,13 @@ kubectl patch object demo-team-a --type merge \
 kubectl get ns demo-team-a --show-labels
 ```
 
-**`removalPolicy`** decides what happens to the *real* object when the MR is
+**`deletionPolicy`** decides what happens to the *real* object when the MR is
 deleted:
 
 ```yaml
 spec:
-  removalPolicy: Delete   # default — delete the real object (what you saw in §12)
-  # removalPolicy: Orphan — delete the MR, keep the real object
+  deletionPolicy: Delete   # default — delete the real object (what you saw in §12)
+  # deletionPolicy: Orphan — delete the MR, keep the real object
 ```
 
 | Policy | When |
@@ -601,7 +648,7 @@ metadata:
   name: demo-team-a-welcome
 spec:
   providerConfigRef: {name: default}
-  removalPolicy: Orphan
+  deletionPolicy: Orphan
   forProvider:
     manifest:
       apiVersion: v1
@@ -615,15 +662,16 @@ kubectl -n demo-team-a get configmap welcome    # still there — orphaned
 kubectl -n demo-team-a delete configmap welcome # clean up by hand
 ```
 
-> **Note for v1 tutorial readers:** this was called `deletionPolicy` in
-> Crossplane v1. See [Appendix A](#appendix-a--crossplane-v1-vs-v2-why-old-tutorials-mislead).
+> **Note:** `managementPolicies` (beta) is the newer, finer-grained
+> replacement for `deletionPolicy`; when both are set, non-default
+> `managementPolicies` win. This episode sticks with `deletionPolicy`.
 
 ## 14. Publish Your Own API — the XRD
 
 So far: Crossplane managing things one object at a time. Now the platform-
 engineering move: **define a new API**.
 
-Guided: covered by `make demo-ep01` step 3. Manual:
+**Make:** `make demo-ep01-step STEP=3` (applies the XRD *and* the Composition — §14 + §15).  **Manual:**
 
 ```bash
 kubectl apply -f episodes/01-getting-started/manifests/02-xrd.yaml
@@ -638,8 +686,11 @@ Read the XRD on camera; the teaching points:
   You are now a first-class API author, same as the Kubernetes steering committee.
 - `names.kind: WebApp` — consumers write `kind: WebApp`.
 - `scope: Namespaced` — **a v2 feature**: XRs live in namespaces, so teams
-  can own, RBAC-scope, and quota them. (v1 XRs were cluster-scoped with
-  "claims" in front — Appendix A.)
+  can own, RBAC-scope, and quota them. A namespaced XR can only compose
+  resources **in its own namespace** (no cluster-scoped kinds like
+  `Namespace`) — that's why the team namespace is created separately in
+  Section 16. (v1 XRs were cluster-scoped with "claims" in front —
+  Appendix A.)
 - `versions[].schema` — plain OpenAPI, exactly like any CRD. `slug` is
   required; `replicas` defaults to 2; `image` is optional (the Composition
   fills a default).
@@ -656,10 +707,13 @@ kubectl get crd webapps.demo.crossplane.io -o yaml | head -40
 
 ## 15. The Composition — a Recipe Made of Functions
 
+**Make:** `make xp-functions` (functions), then `make demo-ep01-step STEP=3` (XRD + Composition).  **Manual:**
+
 ```bash
 kubectl apply -f episodes/01-getting-started/manifests/03-composition.yaml
 
-# And install the functions it uses (packages — same mechanism as §9):
+# The functions it uses are packages (same mechanism as §9). `make
+# crossplane-install` already applied these; the apply is idempotent:
 kubectl apply -f lab/providers/40-functions.yaml
 kubectl get functions -w
 # function-patch-and-transform   INSTALLED/HEALTHY
@@ -676,8 +730,9 @@ spec:
     - step: patch-and-transform
       functionRef: {name: function-patch-and-transform}
       input:               # everything this function needs, inline
-        resources:         # 4 templates: namespace, deployment, service, configmap
-          ...patches: FromCompositeFieldPath (spec.slug -> metadata.name, ...)
+        resources:         # 3 templates: deployment, service, configmap
+          ...patches: FromCompositeFieldPath (spec.replicas -> spec.replicas, ...)
+          ...readinessChecks: Deployment -> MatchCondition Available; Service/ConfigMap -> None
     - step: automatically-mark-ready
       functionRef: {name: function-auto-ready}
 ```
@@ -687,20 +742,25 @@ spec:
 1. A WebApp is created → the composition controller starts a **render**
 2. The observed composite + connection details go **into** function 1
 3. `patch-and-transform` returns a list of *desired composed resources*
-   (it doesn't create anything!): namespace + deployment + service + configmap,
-   each with fields patched in from `spec.slug`, `spec.replicas`, `spec.image`
+   (it doesn't create anything!): deployment + service + configmap,
+   with fields patched in from `spec.slug`, `spec.replicas`, `spec.image`
 4. Function 2 (`auto-ready`) looks at everything and decides when the XR
-   can be marked `Ready`
+   can be marked `Ready`. It only trusts a `Ready` condition or a
+   `readinessChecks` result from step 1 — plain Kubernetes objects have
+   neither by default, so the Composition declares `readinessChecks`
+   itself. Without them the WebApp sits at `Unready resources: config,
+   deployment, and service` forever.
 5. The controller takes the rendered resources and creates/updates them —
-   as plain Kubernetes objects (Namespace/Deployment/Service — no provider
-   needed) — and updates their status back into the WebApp
+   as plain Kubernetes objects in the WebApp's namespace (Deployment/Service/
+   ConfigMap — no provider needed) — and updates their status back into the WebApp
 
 **Offline rendering — the killer debugging feature** (use it live):
 
 ```bash
-crossplane beta render episodes/01-getting-started/manifests/04-webapp.yaml \
-                            episodes/01-getting-started/manifests/03-composition.yaml
-# prints all 4 composed resources — no cluster required
+crossplane render episodes/01-getting-started/manifests/04-webapp.yaml \
+                  episodes/01-getting-started/manifests/03-composition.yaml \
+                  lab/providers/40-functions.yaml
+# prints all 3 composed resources — no cluster required (needs Docker to run the functions)
 ```
 
 > **On camera:** "This is `terraform plan` for compositions — except it's
@@ -714,32 +774,38 @@ Go/Python. Season 2 lives here.
 
 ## 16. Use the API — Create, Trace, Update, Delete a WebApp
 
+**Make:** `make demo-ep01-step STEP=4` (create) · `STEP=5` (update) · `STEP=6` (trace + delete).  **Manual:** below.
+
 **Create — the payoff moment:**
 
 ```bash
+# The team's namespace (platform-owned) — a namespaced WebApp lives in it:
+kubectl apply -f episodes/01-getting-started/manifests/00-team-namespace.yaml
+
 cat episodes/01-getting-started/manifests/04-webapp.yaml
-# 9 lines: kind, name, slug, replicas. That's ALL a developer writes.
+# ~7 lines: kind, name, namespace, slug, replicas. That's ALL a developer writes.
 
 kubectl apply -f episodes/01-getting-started/manifests/04-webapp.yaml
-kubectl get webapp payments -w          # watch READY flip True
-kubectl -n payments-team get all,cm     # the composed environment
+kubectl -n payments-team get webapp payments -w   # watch READY flip True
+kubectl -n payments-team get all,cm               # the composed environment
 ```
 
 **Trace — the dependency tree:**
 
 ```bash
-crossplane beta trace webapp/payments
-# WebApp payments — Ready
-# └─ Namespace payments-team — Ready
-# └─ Deployment webapp — Ready
-# └─ Service webapp — Ready
-# └─ ConfigMap webapp-config — Ready
+crossplane beta trace webapp/payments -n payments-team
+# NAME                                         SYNCED   READY   STATUS
+# WebApp/payments (payments-team)              True     True    Available
+# ├─ Deployment/webapp (payments-team)
+# ├─ ConfigMap/webapp-config (payments-team)
+# └─ Service/webapp (payments-team)
+# (plain K8s children show no SYNCED/READY columns — only MRs do)
 ```
 
 **Update — change the spec, watch it flow through:**
 
 ```bash
-kubectl patch webapp payments --type merge -p '{"spec":{"replicas":4}}'
+kubectl -n payments-team patch webapp payments --type merge -p '{"spec":{"replicas":4}}'
 watch kubectl -n payments-team get deployment webapp
 # replicas scales 2 -> 4. The patch pipeline copied spec.replicas into the
 # Deployment template, the composite controller updated the composed
@@ -747,7 +813,7 @@ watch kubectl -n payments-team get deployment webapp
 # A chain of control loops — point this out explicitly.
 
 # Also: image comes from spec.image (or the Composition default):
-kubectl patch webapp payments --type merge \
+kubectl -n payments-team patch webapp payments --type merge \
   -p '{"spec":{"image":"ghcr.io/stefanprodan/podinfo:6.7.0"}}'
 ```
 
@@ -755,18 +821,21 @@ kubectl patch webapp payments --type merge \
 
 ```bash
 kubectl -n payments-team port-forward service/webapp 9898:9898 &
-curl localhost:9898/ | head -1
+PF_PID=$!
+sleep 2; curl -s localhost:9898/ | head -1
+kill $PF_PID
 ```
 
 **Delete — and the platform cleans up:**
 
 ```bash
-kubectl delete webapp payments
-kubectl get ns payments-team 2>&1        # NotFound — everything cascaded
+kubectl -n payments-team delete webapp payments
+kubectl -n payments-team get all,cm      # composed resources cascaded away
+# (the platform-owned namespace stays; remove it with 00-team-namespace.yaml)
 ```
 
-> **On camera:** "Nine lines created four resources; one delete removed
-> them. Now imagine `kind: Database` or `kind: Bucket` behind the same
+> **On camera:** "A handful of lines created three resources; one delete
+> removed them. Now imagine `kind: Database` or `kind: Bucket` behind the same
 > pattern — that's a platform."
 
 ## 17. Crossplane vs Terraform — the Full Comparison
@@ -783,7 +852,7 @@ kubectl get ns payments-team 2>&1        # NotFound — everything cascaded
 | **Abstraction** | modules — files consumers call | XRD + Composition — APIs consumers create |
 | **Credentials** | on the runner's machine/env | ProviderConfig resources, swappable, no copy on laptops |
 | **Day-2 (update, scale, delete)** | rerun the pipeline | patch the resource |
-| **Ecosystem** | 15+ yrs, ~1800 providers | younger; strong AWS/GCP/K8s; gaps elsewhere |
+| **Ecosystem** | 15+ yrs, a very large provider registry | younger; strong AWS/GCP/K8s; gaps elsewhere |
 | **Weak spots** | state pain, drift blindness, HCL for consumers | v2 churn (Appendix A), patchy provider coverage, YAML verbosity at scale |
 
 **The verdict (deliver honestly, both ways):**
@@ -814,7 +883,8 @@ Manual (same as the script, in order):
 ```bash
 kubectl delete -f episodes/01-getting-started/manifests/04-webapp.yaml --ignore-not-found
 kubectl delete -f episodes/01-getting-started/manifests/01-managed-resources.yaml --ignore-not-found
-kubectl delete namespace payments-team demo-team-a --ignore-not-found
+kubectl delete -f episodes/01-getting-started/manifests/00-team-namespace.yaml --ignore-not-found
+kubectl delete namespace demo-team-a --ignore-not-found
 
 # XRD + Composition are the "platform" — normally you keep them installed.
 # To remove them too:
@@ -841,12 +911,14 @@ kubectl delete namespace crossplane-system --ignore-not-found
 |---|---|---|
 | Provider stuck `Healthy=False` | `kubectl describe provider provider-kubernetes` → events | usually image pull from xpkg.upbound.io; wait or fix node egress |
 | `Object` stuck `Synced=False` | `kubectl describe object <name>` → conditions + events | ProviderConfig name wrong (must be `default`); RBAC missing (`20-rbac.yaml`); SA name mismatch (apply `10-runtime-config.yaml` first) |
-| WebApp never becomes `Ready` | `crossplane beta trace webapp/payments` | which composed resource is unhealthy? `kubectl logs -n crossplane-system -l pkg.crossplane.io/function=function-auto-ready` |
+| WebApp never becomes `Ready` | `crossplane beta trace webapp/payments -n payments-team` | which composed resource is unhealthy? `kubectl logs -n crossplane-system -l pkg.crossplane.io/function=function-auto-ready` |
+| WebApp `Ready=False`, message `Unready resources: ...` but pods are fine | composed plain K8s objects have no Ready condition | add `readinessChecks` per resource in `03-composition.yaml` (already done in this repo) |
+| Edit-revert demo never reverts | provider older than v1.2.0 (no server-side apply) | pin `provider-kubernetes:v1.2.0` in `00-provider.yaml` |
 | Composition renders nothing | functions not Healthy: `kubectl get functions` | apply `lab/providers/40-functions.yaml`, wait for Health |
-| `crossplane: command not found` | CLI missing | `brew install crossplane-cli` (demo.sh degrades, but trace/render need it) |
+| `crossplane: command not found` | CLI missing | see Section 4 for the install script (demo.sh degrades, but trace/render need it) |
 | Namespace delete hangs on finalizers | crossplane-system removed while MRs still existed | `kubectl patch <mr> -p '{"metadata":{"finalizers":[]}}' --type merge` (last resort) |
-| Drift heal takes >2 min | provider relying on poll fallback | force reconcile: `kubectl -n crossplane-system delete pod -l pkg.crossplane.io/provider=provider-kubernetes` |
-| Old-tutorial manifests rejected (`ClusterScope`, `claimNames`, `deletionPolicy`) | v1 syntax against v2 | see Appendix A — this series is v2-only |
+| Drift heal takes >2 min | `--poll=30s` not applied (check the provider pod args) | confirm `10-runtime-config.yaml` was applied before the Provider; force reconcile: `kubectl -n crossplane-system delete pod -l pkg.crossplane.io/provider=provider-kubernetes` |
+| Old-tutorial manifests rejected (`claimNames`, cluster-scoped XRs, `mode: Resources`) | v1 syntax against v2 | see Appendix A — this series is v2-only |
 
 ## Appendix A — Crossplane v1 vs v2 (why old tutorials mislead)
 
@@ -857,10 +929,9 @@ this guide, check its date first.
 |---|---|---|
 | Composite resource scope | cluster-scoped | **Namespaced** (or Cluster) — `scope: Namespaced` in the XRD |
 | Claims | `claimNames` — the developer-facing copy of an XR | **removed** — namespaced XRs *are* the developer resource |
-| Deletion policy | `deletionPolicy` | **`removalPolicy`** |
-| Packages | `pkg.crossplane.io/v1` (beta) + `v1beta1` relics | `pkg.crossplane.io/v2` |
+| Composing resources | any scope | namespaced XRs compose only namespaced resources in their own namespace |
+| Composing any kind | Crossplane/provider MRs only | **any** Kubernetes resource (e.g. a plain Deployment) |
 | Compositions | `mode: Resources` (built-in patching) + Pipeline | **Pipeline only** — patch logic lives in functions |
-| MR finalizers | always on | opt-in — deletion works without finalizers by default |
 
 ## Appendix B — Glossary
 

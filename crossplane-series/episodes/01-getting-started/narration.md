@@ -73,7 +73,7 @@ Look at the differences:
 
 - Desired state lives in the API server. No state file. `kubectl get` is your `terraform state list`. etcd already solved storage, watch, audit — Crossplane just reuses it.
 - Correctness doesn't end. The loop runs forever. Delete the resource behind the controller's back, it gets recreated — you saw that in the cold open.
-- The product is an API. Your platform team can publish `kind: WebApp`, and a developer gets a whole compliant environment from nine lines of YAML. No HCL, no credentials, no pipeline.
+- The product is an API. Your platform team can publish `kind: WebApp`, and a developer gets a whole compliant environment from a handful of lines of YAML. No HCL, no credentials, no pipeline.
 
 [5:40]
 
@@ -89,7 +89,7 @@ The other half is vocabulary, and it's small: providers, provider configs, manag
 
 [6:30]
 
-The lab — you've seen it in the Kubernetes Under the Hood series: three-node K3s on Proxmox. Terraform built these VMs, which I promise becomes funny later. Prometheus and Grafana are running. We're just adding one more thing to it.
+The lab — you've seen it in the Kubernetes Under the Hood series: three-node K3s on Proxmox. Terraform built these VMs, which I promise becomes funny later. We're just adding one more thing to it.
 
 ---
 
@@ -102,7 +102,7 @@ Crossplane installs as one Helm release. That's it:
 ```bash
 helm repo add crossplane-stable https://charts.crossplane.io/stable
 helm upgrade --install crossplane crossplane-stable/crossplane \
-  --namespace crossplane-system --create-namespace --wait
+  --namespace crossplane-system --create-namespace --version 2.0.2 --wait
 ```
 
 [7:40 — while it runs]
@@ -116,11 +116,11 @@ kubectl get pods -n crossplane-system
 kubectl get crd | grep -c crossplane
 ```
 
-One pod — well, two with the RBAC manager. And look at this: forty-plus CRDs, from one chart. This is Crossplane's language definition. Every provider and function we install today gets installed *by* this thing — Crossplane bootstraps itself.
+One pod — well, two with the RBAC manager. And look at this: about twenty CRDs, from one chart. This is Crossplane's language definition. Every provider and function we install today gets installed *by* this thing — Crossplane bootstraps itself.
 
 [8:45]
 
-Versions note: we're on v2 — I'll flag where v1 differs as we go, because most tutorials out there are v1 and they will lie to you. Claims are gone, XRDs are namespaced, deletion policy got renamed. Cheat sheet is in the repo notes.
+Versions note: we're on v2 — I'll flag where v1 differs as we go, because most tutorials out there are v1 and they will lie to you. Claims are gone, composite resources are namespaced, compositions are always pipelines of functions. Cheat sheet is in the repo notes.
 
 ---
 
@@ -180,9 +180,9 @@ kubectl get provider provider-kubernetes -w
 
 ```
 PACKAGE                       INSTALLED   HEALTHY
-provider-kubernetes:v1.0.0
-provider-kubernetes:v1.0.0   True
-provider-kubernetes:v1.0.0   True        True
+provider-kubernetes:v1.2.0
+provider-kubernetes:v1.2.0   True
+provider-kubernetes:v1.2.0   True        True
 ```
 
 Two conditions, flipping live, and each one has a precise meaning.
@@ -340,7 +340,7 @@ kubectl get ns demo-team-a
 kubectl -n demo-team-a get configmap welcome -o yaml | grep -A6 metadata
 ```
 
-There it is — a namespace, created by a controller. And look at the annotations on the ConfigMap: `crossplane.io/external-name`, creation timestamps, ownership marks. The provider *signed its work*, exactly the way a Deployment owner-references its ReplicaSets. Which means there is no state file holding "I created this": the ownership lives in the API, on the object, where anything can read it. `kubectl get` — what you just did — *is* `terraform state list`. All of it. Forever.
+There it is — a namespace, created by a controller. And look at the annotations on the managed resource itself: `crossplane.io/external-name`, create-succeeded timestamps. The provider *signed its work*, and the ConfigMap's field manager says `provider-kubernetes/demo-team-a-welcome` — exactly the way a Deployment owner-references its ReplicaSets. Which means there is no state file holding "I created this": the ownership lives in the API, where anything can read it. `kubectl get` — what you just did — *is* `terraform state list`. All of it. Forever.
 
 [22:30 — the flip]
 
@@ -375,7 +375,7 @@ done
 
 [24:30 — healed]
 
-And it's back. Usually under a minute. I fought the control plane, and the control plane won.
+And it's back — about ten seconds in this lab. I fought the control plane, and the control plane won.
 
 [24:45]
 
@@ -386,7 +386,7 @@ kubectl -n demo-team-a patch configmap welcome \
   -p '{"data":{"message":"edited by a human, defiantly"}}'
 ```
 
-Sneakier — the object exists, `kubectl get` looks fine, but the data is wrong. Drift that pipelines are *specifically* blind to, because the object still exists. Give it a reconcile cycle... and the message is back to what the managed resource says. The provider overwrote the edit.
+Sneakier — the object exists, `kubectl get` looks fine, but the data is wrong. Drift that pipelines are *specifically* blind to, because the object still exists. Give it a reconcile cycle — we set the provider's poll to thirty seconds — and the message is back to what the managed resource says. The provider overwrote the edit. One footnote worth knowing: that works because we pinned provider-kubernetes v1.2.0, which uses server-side apply. Older versions only compare against an annotation and would *never* notice this edit.
 
 [25:40]
 
@@ -405,7 +405,7 @@ Recap the three attacks and the three correct responses: delete → recreate; ed
 
 [27:00]
 
-Hold on though — "Crossplane deletes my infrastructure when I delete a YAML object" is also how you *lose* infrastructure by accident. Crossplane thought about that: `removalPolicy`. Default is Delete — what you just saw. But I can set `Orphan`: delete the managed resource, and the real object stays behind, unmanaged. That's how you *adopt* existing infrastructure — you manage it, learn from it, and if you ever want to stop managing it, you walk away without destroying anything. We'll flip that flag live in a second. First — let's build the API.
+Hold on though — "Crossplane deletes my infrastructure when I delete a YAML object" is also how you *lose* infrastructure by accident. Crossplane thought about that: `deletionPolicy`. Default is Delete — what you just saw. But I can set `Orphan`: delete the managed resource, and the real object stays behind, unmanaged. That's how you *adopt* existing infrastructure — you manage it, learn from it, and if you ever want to stop managing it, you walk away without destroying anything. We'll flip that flag live in a second. First — let's build the API.
 
 ---
 
@@ -459,7 +459,7 @@ Meaning in Crossplane comes from a Composition. And the reason I slowed down on 
 
 [30:30]
 
-The composition is the recipe: when someone creates a WebApp, here's everything they get and how it's built. Ours composes four resources: a namespace, a deployment, a service, and a configmap — a tiny compliant environment for a team's web app.
+The composition is the recipe: when someone creates a WebApp, here's everything they get and how it's built. Ours composes three resources: a deployment, a service, and a configmap — a tiny compliant environment for a team's web app, inside the team's own namespace. Why no Namespace resource? Because a namespaced WebApp can only compose things *in its own namespace*; the namespace is something the platform team creates once per team.
 
 [30:50]
 
@@ -471,14 +471,14 @@ pipeline:
   - step: patch-and-transform
     functionRef: {name: function-patch-and-transform}
     input:
-      resources: [namespace, deployment, service, configmap...]
+      resources: [deployment, service, configmap...]
   - step: automatically-mark-ready
     functionRef: {name: function-auto-ready}
 ```
 
 [31:30]
 
-And here's the mental model everyone misses, so let me be really precise. Functions do not create anything. When a WebApp appears, the composition controller starts a **render**: it takes the WebApp — what the user asked for — and passes it into function one. Function one is `patch-and-transform`, a container that takes templates plus patches and returns a list of *desired* resources: "here's the namespace, named from spec.slug; here's the deployment, replicas from spec.replicas, image from spec.image or the default; here's the service; here's the configmap." It returns *paperwork*. Then function two, `auto-ready`, looks at the rendered resources and decides when the WebApp can be called Ready. Then — and only then — the composition controller actually creates and updates those resources and streams their status back into the WebApp. Functions render. Controllers create.
+And here's the mental model everyone misses, so let me be really precise. Functions do not create anything. When a WebApp appears, the composition controller starts a **render**: it takes the WebApp — what the user asked for — and passes it into function one. Function one is `patch-and-transform`, a container that takes templates plus patches and returns a list of *desired* resources: "here's the deployment, replicas from spec.replicas, image from spec.image or the default; here's the service; here's the configmap." It returns *paperwork*. It also returns readiness checks — the deployment counts as ready when it's Available; the service and configmap are ready on creation. Then function two, `auto-ready`, looks at the rendered resources and decides when the WebApp can be called Ready. Those readiness checks matter: plain Kubernetes objects don't report a Ready condition, and without them the WebApp would sit at 'unready' forever. Then — and only then — the composition controller actually creates and updates those resources and streams their status back into the WebApp. Functions render. Controllers create.
 
 [32:40]
 
@@ -499,10 +499,11 @@ Same install story — functions are packages too, pulled as OCI images, install
 Now let me show you something Terraform genuinely cannot do. I can render this composition *completely offline*:
 
 ```bash
-crossplane beta render manifests/04-webapp.yaml manifests/03-composition.yaml
+crossplane render episodes/01-getting-started/manifests/04-webapp.yaml \
+  episodes/01-getting-started/manifests/03-composition.yaml lab/providers/40-functions.yaml
 ```
 
-All four resources, printed, exactly as they'd be created — and no cluster was involved. Functions are containers; the render runs them locally. This is `terraform plan` — pure, offline, no state file — and you can run it in CI on every PR to your platform definition. You can *unit-test your platform*.
+All three resources, printed, exactly as they'd be created — and no cluster was involved. Functions are containers; the render runs them locally. This is `terraform plan` — pure, offline, no state file — and you can run it in CI on every PR to your platform definition. You can *unit-test your platform*.
 
 [34:50]
 
@@ -514,27 +515,28 @@ XRD defines the API. Composition gives it meaning. Now let's use it.
 
 [35:00 — the whole file on screen; let it breathe]
 
-This is everything a developer writes:
+This is everything a developer writes — into the team's namespace, which the platform team created once:
 
 ```yaml
 apiVersion: demo.crossplane.io/v1alpha1
 kind: WebApp
-metadata: {name: payments, namespace: default}
+metadata: {name: payments, namespace: payments-team}
 spec:
-  slug: payments-team
+  slug: payments
   replicas: 2
 ```
 
-Nine lines. Nine. No namespace YAML, no deployment YAML, no service YAML, no configmap YAML, no copying the "standard deployment" from the last team's repo. They ask for an app; the platform does the rest.
+Seven lines. No deployment YAML, no service YAML, no configmap YAML, no copying the "standard deployment" from the last team's repo. They ask for an app; the platform does the rest.
 
 [35:40 — terminal]
 
 ```bash
+kubectl apply -f episodes/01-getting-started/manifests/00-team-namespace.yaml
 kubectl apply -f episodes/01-getting-started/manifests/04-webapp.yaml
-kubectl get webapp payments -w
+kubectl -n payments-team get webapp payments -w
 ```
 
-Watch the status go Ready — that's auto-ready doing its job, checking all four composed resources. And:
+Watch the status go Ready — that's auto-ready doing its job, checking all three composed resources. And:
 
 [36:10]
 
@@ -542,22 +544,22 @@ Watch the status go Ready — that's auto-ready doing its job, checking all four
 kubectl -n payments-team get all,cm
 ```
 
-There it is. The namespace, the deployment — podinfo, running, two replicas — the service, the configmap. One resource in, an environment out. And the status flowed back the other way: the WebApp's conditions summarize everything composed beneath it. You can build dashboards off *that*.
+There it is. The deployment — podinfo, running, two replicas — the service, the configmap. One resource in, an environment out. And the status flowed back the other way: the WebApp's conditions summarize everything composed beneath it. You can build dashboards off *that*.
 
 [36:50 — the tree]
 
 Now the tool that will follow you around forever:
 
 ```bash
-crossplane beta trace webapp/payments
+crossplane beta trace webapp/payments -n payments-team
 ```
 
 ```
-WebApp payments — Ready
-├─ Namespace payments-team
-├─ Deployment webapp
-├─ Service webapp
-└─ ConfigMap webapp-config
+NAME                                         SYNCED   READY   STATUS
+WebApp/payments (payments-team)              True     True    Available
+├─ Deployment/webapp (payments-team)
+├─ ConfigMap/webapp-config (payments-team)
+└─ Service/webapp (payments-team)
 ```
 
 The full dependency tree, live. When something's wrong, you don't guess — you trace, you find which composed resource is unhappy, you look at *its* events. Incident response for infrastructure, the kubectl way.
@@ -567,7 +569,7 @@ The full dependency tree, live. When something's wrong, you don't guess — you 
 Now updates — this is where it gets philosophically beautiful. Watch what happens when I change the spec:
 
 ```bash
-kubectl patch webapp payments --type merge -p '{"spec":{"replicas":4}}'
+kubectl -n payments-team patch webapp payments --type merge -p '{"spec":{"replicas":4}}'
 watch kubectl -n payments-team get deployment webapp
 ```
 
@@ -578,7 +580,7 @@ Four replicas. But think about the chain that just fired: I patched the WebApp �
 And it's real infrastructure, so let's use it:
 
 ```bash
-kubectl -n payments-team port-forward service/webapp 98103:3898 &
+kubectl -n payments-team port-forward service/webapp 9898:9898 &
 curl localhost:9898/
 ```
 
@@ -587,11 +589,11 @@ curl localhost:9898/
 And the final power move — cleanup:
 
 ```bash
-kubectl delete webapp payments
-kubectl get ns payments-team      # NotFound
+kubectl -n payments-team delete webapp payments
+kubectl -n payments-team get all,cm      # composed resources gone
 ```
 
-Delete the claim on the API, the platform deletes everything it composed. Nine lines in, one line out, environment completely cleaned. Imagine `kind: Database` behind this pattern. That's a platform.
+Delete the WebApp on the API, the platform deletes everything it composed. Seven lines in, one line out, environment completely cleaned. Imagine `kind: Database` behind this pattern. That's a platform.
 
 ---
 
@@ -607,7 +609,7 @@ Time to pay off the promise from the intro. The full, honest comparison.
 
 **Drift.** Terraform detects drift when a human or CI runs plan — bolt on a cron. Crossplane *corrects* drift continuously. You watched it. That was the cold open.
 
-**Abstraction.** Terraform modules: consumers still write HCL, still hold credentials, still wait on pipelines. Crossplane XRDs: consumers write nine lines of `kind: WebApp`. Modules are files you call; XRDs are APIs you publish.
+**Abstraction.** Terraform modules: consumers still write HCL, still hold credentials, still wait on pipelines. Crossplane XRDs: consumers write a handful of lines of `kind: WebApp`. Modules are files you call; XRDs are APIs you publish.
 
 **Updates and day-2.** Re-run the pipeline, versus... patch the resource. And GitOps fits for free: Argo CD syncing Crossplane resources is just Argo CD doing what it already does.
 

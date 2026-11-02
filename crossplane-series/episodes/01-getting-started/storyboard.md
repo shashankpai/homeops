@@ -16,10 +16,10 @@
 | 5 | **Providers — the core, take your time** | 9:00–14:00 | App-store analogy; vocabulary/workers/identity anatomy; Provider -w; new CRD + Deployment appear | "Core can do nothing — by design." Installed vs Healthy = half of debugging. CRDs come *out of the package*. Security: SA+RBAC is real least-privilege work |
 | 6 | **ProviderConfig — identity without secrets** | 14:00–17:00 | The 5-line InjectedIdentity file; credential-source table | "Every API cards you." Identity as a resource: separation, swapping, rotation. Why the name is `default` |
 | 7 | **Managed resources — the atom** | 17:00–23:00 | Field-by-field YAML walk; READY/SYNCED -w; annotations on the real object | forProvider = remote API's own YAML embedded. "Synced = messenger, Ready = package." Spec down/status up. **The flip: the MR is the truth, the object is the shadow** |
-| 8 | Drift fight | 23:00–27:30 | 3 attacks: delete → heal; edit → revert; delete MR → cascade | The centerpiece. Timer overlay. removalPolicy teaser |
+| 8 | Drift fight | 23:00–27:30 | 3 attacks: delete → heal; edit → revert; delete MR → cascade | The centerpiece. Timer overlay. deletionPolicy teaser |
 | 9 | XRD | 27:30–30:30 | XRD YAML; kubectl explain | "Kubernetes learned a new word." API vs modules |
-| 10 | Composition + functions | 30:30–35:00 | Pipeline YAML; offline `crossplane beta render` | Functions render, controllers create. Offline render = unit-testing the platform |
-| 11 | WebApp payoff | 35:00–40:00 | 9-line YAML → environment; trace tree; patch replicas 2→4; curl; delete → clean | Update = chain of control loops. Trace = incident response |
+| 10 | Composition + functions | 30:30–35:00 | Pipeline YAML; offline `crossplane render` | Functions render, controllers create. Offline render = unit-testing the platform |
+| 11 | WebApp payoff | 35:00–40:00 | 7-line YAML → environment; trace tree; patch replicas 2→4; curl; delete → clean | Update = chain of control loops. Trace = incident response |
 | 12 | Verdict: vs Terraform | 40:00–44:00 | Comparison table; litmus test | Both columns honestly; "who notices a 2am change?"; Terraform built this lab |
 
 ## Assets to prepare

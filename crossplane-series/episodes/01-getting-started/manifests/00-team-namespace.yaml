@@ -1,0 +1,6 @@
+# Episode 1 — the team's namespace. A namespaced WebApp lives here and its
+# composed resources land here. Platform-owned, created once per team.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: payments-team

@@ -39,7 +39,7 @@ kubectl apply -f "$SCRIPT_DIR/providers/20-rbac.yaml"
 banner "Step 3/4 — Installing provider-kubernetes + functions"
 # sed the pinned package versions into the manifests at apply time
 for f in "$SCRIPT_DIR/providers/00-provider.yaml" "$SCRIPT_DIR/providers/40-functions.yaml"; do
-    sed -e "s|provider-kubernetes:v1.0.0|provider-kubernetes:${PROVIDER_KUBERNETES_VERSION}|" \
+    sed -e "s|provider-kubernetes:v1.2.0|provider-kubernetes:${PROVIDER_KUBERNETES_VERSION}|" \
         -e "s|function-patch-and-transform:v0.10.0|function-patch-and-transform:${FUNCTION_PNT_VERSION}|" \
         -e "s|function-auto-ready:v0.5.0|function-auto-ready:${FUNCTION_AUTO_READY_VERSION}|" \
         "$f" | kubectl apply -f -

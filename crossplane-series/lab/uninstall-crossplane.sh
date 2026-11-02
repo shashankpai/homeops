@@ -22,4 +22,8 @@ kubectl delete -f "$SCRIPT_DIR/providers/10-runtime-config.yaml" --ignore-not-fo
 helm uninstall crossplane -n crossplane-system 2>/dev/null || true
 kubectl delete namespace crossplane-system --ignore-not-found
 
+# Helm does not remove CRDs or this webhook; clean them up explicitly.
+kubectl delete validatingwebhookconfiguration crossplane-no-usages --ignore-not-found
+kubectl get crd -o name | grep -E 'crossplane\.io$' | xargs -r kubectl delete --wait=false
+
 echo -e "${GREEN}✓ Crossplane removed — lab still running${NC}"

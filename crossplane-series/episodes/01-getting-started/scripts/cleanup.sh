@@ -15,7 +15,7 @@ echo -e "${YELLOW}Removing Episode 1 workloads...${NC}"
 
 kubectl delete -f "$EP_DIR/manifests/04-webapp.yaml" --ignore-not-found
 kubectl delete -f "$EP_DIR/manifests/01-managed-resources.yaml" --ignore-not-found
-kubectl delete namespace payments-team --ignore-not-found 2>/dev/null || true
+kubectl delete -f "$EP_DIR/manifests/00-team-namespace.yaml" --ignore-not-found
 kubectl delete namespace demo-team-a --ignore-not-found 2>/dev/null || true
 
 # Keep the XRD + Composition installed: they are the "platform" the lab built.

@@ -5,7 +5,7 @@ apiVersion: demo.crossplane.io/v1alpha1
 kind: WebApp
 metadata:
   name: payments
-  namespace: default
+  namespace: payments-team
 spec:
-  slug: payments-team
+  slug: payments
   replicas: 2
