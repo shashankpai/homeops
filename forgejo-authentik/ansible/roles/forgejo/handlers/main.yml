@@ -1,0 +1,4 @@
+- name: Restart forgejo
+  ansible.builtin.command: docker compose restart forgejo caddy
+  args:
+    chdir: /opt/forgejo

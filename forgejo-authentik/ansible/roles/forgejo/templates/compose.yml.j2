@@ -1,0 +1,65 @@
+services:
+  postgresql:
+    image: postgres:{{ postgres_version }}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: forgejo
+      POSTGRES_DB: forgejo
+      POSTGRES_PASSWORD: ${FORGEJO_DB_PASSWORD}
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forgejo -d forgejo"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:{{ forgejo_version }}
+    restart: unless-stopped
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.pem
+      FORGEJO__server__DOMAIN: {{ forgejo_domain }}
+      FORGEJO__server__ROOT_URL: https://{{ forgejo_domain }}/
+      FORGEJO__server__SSH_DOMAIN: {{ forgejo_domain }}
+      FORGEJO__server__SSH_PORT: "2222"
+      FORGEJO__server__SSH_LISTEN_PORT: "2222"
+      FORGEJO__server__START_SSH_SERVER: "true"
+      FORGEJO__database__DB_TYPE: postgres
+      FORGEJO__database__HOST: postgresql:5432
+      FORGEJO__database__NAME: forgejo
+      FORGEJO__database__USER: forgejo
+      FORGEJO__database__PASSWD: ${FORGEJO_DB_PASSWORD}
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      FORGEJO__service__REQUIRE_SIGNIN_VIEW: "true"
+      FORGEJO__service__ENABLE_NOTIFY_MAIL: "false"
+      FORGEJO__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"
+      FORGEJO__actions__ENABLED: "true"
+      FORGEJO__log__LEVEL: Info
+    volumes:
+      - ./data:/data
+      - /opt/trust/ca-bundle.pem:/etc/ssl/certs/ca-bundle.pem:ro
+    extra_hosts:
+      - "{{ authentik_domain }}:{{ authentik_ip }}"
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "2222:2222"
+
+  caddy:
+    image: caddy:{{ caddy_version }}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-data:/data
+      - ./caddy-config:/config
+    depends_on:
+      - forgejo

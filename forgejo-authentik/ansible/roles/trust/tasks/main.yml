@@ -1,0 +1,25 @@
+- name: Ensure trust directory
+  ansible.builtin.file:
+    path: /opt/trust
+    state: directory
+    mode: "0755"
+
+- name: Assemble exported Caddy root CAs on the controller
+  ansible.builtin.assemble:
+    src: "{{ playbook_dir }}/.artifacts/roots"
+    dest: "{{ playbook_dir }}/.artifacts/home-lab-roots.pem"
+    regexp: '\.crt$'
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Install home-lab roots
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/.artifacts/home-lab-roots.pem"
+    dest: /opt/trust/home-lab-roots.pem
+    mode: "0644"
+
+- name: Build CA bundle (system + home-lab roots)
+  ansible.builtin.shell: cat /etc/ssl/certs/ca-certificates.crt /opt/trust/home-lab-roots.pem > /opt/trust/ca-bundle.pem
+  changed_when: true

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Nightly logical backup: Postgres dump + app data directory + .env (secrets).
+set -euo pipefail
+
+APP="{{ inventory_hostname }}"
+APP_DIR="/opt/${APP}"
+DEST="/var/backups/${APP}"
+TS="$(date +%F-%H%M)"
+
+cd "${APP_DIR}"
+docker compose exec -T postgresql pg_dump -U "${APP}" "${APP}" | gzip > "${DEST}/db-${TS}.sql.gz"
+tar -C "${APP_DIR}" -czf "${DEST}/data-${TS}.tar.gz" data .env
+chmod 600 "${DEST}"/*.gz
+find "${DEST}" -type f -name '*.gz' -mtime +{{ backup_retention_days }} -delete

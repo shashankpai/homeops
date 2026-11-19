@@ -1,0 +1,68 @@
+- name: Create Forgejo directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /opt/forgejo
+    - /opt/forgejo/data
+
+- name: Template Forgejo compose, env and Caddyfile
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/opt/forgejo/{{ item.dest }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { src: compose.yml.j2, dest: compose.yml, mode: "0644" }
+    - { src: env.j2, dest: .env, mode: "0600" }
+    - { src: Caddyfile.j2, dest: Caddyfile, mode: "0644" }
+  notify: Restart forgejo
+
+- name: Start Forgejo stack
+  ansible.builtin.command: docker compose up -d --remove-orphans
+  args:
+    chdir: /opt/forgejo
+  register: forgejo_up
+  changed_when: "'Started' in forgejo_up.stderr or 'Recreated' in forgejo_up.stderr or 'Created' in forgejo_up.stderr"
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Forgejo to become ready
+  ansible.builtin.uri:
+    url: http://127.0.0.1:3000/api/healthz
+    status_code: 200
+  register: forgejo_ready
+  until: forgejo_ready.status == 200
+  retries: 60
+  delay: 5
+
+- name: Read configured auth sources
+  ansible.builtin.command: docker compose exec -T -u git forgejo forgejo admin auth list
+  args:
+    chdir: /opt/forgejo
+  register: auth_list
+  changed_when: false
+
+- name: Register Authentik as OIDC login source
+  ansible.builtin.command: >
+    docker compose exec -T -u git forgejo forgejo admin auth add-oauth
+    --name authentik
+    --provider openidConnect
+    --key forgejo
+    --secret {{ vault_forgejo_oidc_client_secret }}
+    --auto-discover-url https://{{ authentik_domain }}/application/o/forgejo/.well-known/openid-configuration
+    --scopes "openid profile email groups"
+    --group-claim-name groups
+    --admin-group forgejo-admins
+  args:
+    chdir: /opt/forgejo
+  when: "'authentik' not in auth_list.stdout"
+  no_log: true
+
+- name: Export Caddy root CA
+  ansible.builtin.include_role:
+    name: trust
+    tasks_from: export
+  vars:
+    app_dir: /opt/forgejo

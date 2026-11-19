@@ -1,0 +1,9 @@
+runner:
+  capacity: 2
+  timeout: 3h
+
+container:
+  # Job containers run on the host Docker daemon; give them the same CA bundle
+  # so checkout/clone over HTTPS to git.home.lab works.
+  options: "-v /opt/trust/ca-bundle.pem:/etc/ssl/certs/ca-certificates.crt:ro --add-host {{ forgejo_domain }}:{{ forgejo_ip }}"
+  force_pull: true

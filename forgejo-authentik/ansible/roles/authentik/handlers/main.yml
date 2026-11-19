@@ -1,0 +1,4 @@
+- name: Restart authentik
+  ansible.builtin.command: docker compose restart server worker caddy
+  args:
+    chdir: /opt/authentik

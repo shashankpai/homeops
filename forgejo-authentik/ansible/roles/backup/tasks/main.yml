@@ -1,0 +1,18 @@
+- name: Create backup directory (restricted, contains .env secrets)
+  ansible.builtin.file:
+    path: "/var/backups/{{ inventory_hostname }}"
+    state: directory
+    mode: "0700"
+
+- name: Install backup script
+  ansible.builtin.template:
+    src: backup.sh.j2
+    dest: /usr/local/bin/homeops-backup-{{ inventory_hostname }}.sh
+    mode: "0750"
+
+- name: Schedule nightly backup
+  ansible.builtin.cron:
+    name: "homeops backup {{ inventory_hostname }}"
+    minute: "30"
+    hour: "2"
+    job: /usr/local/bin/homeops-backup-{{ inventory_hostname }}.sh >> /var/log/homeops-backup.log 2>&1

@@ -1,0 +1,26 @@
+home_domain: home.lab
+forgejo_domain: git.home.lab
+authentik_domain: auth.home.lab
+forgejo_ip: "{{ hostvars['forgejo'].ansible_host }}"
+authentik_ip: "{{ hostvars['authentik'].ansible_host }}"
+
+timezone: Etc/UTC
+
+ansible_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519"
+
+forgejo_version: "15"
+authentik_version: "2026.5.8"
+postgres_version: "16-alpine"
+caddy_version: "2"
+runner_image: "code.forgejo.org/forgejo/runner:12"
+
+backup_retention_days: 14
+
+host_firewall:
+  forgejo: ["80/tcp", "443/tcp", "2222/tcp"]
+  authentik: ["80/tcp", "443/tcp"]
+  runner-01: []
+
+hosts_file_entries: |
+  {{ forgejo_ip }} {{ forgejo_domain }}
+  {{ authentik_ip }} {{ authentik_domain }}

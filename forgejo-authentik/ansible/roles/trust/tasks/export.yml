@@ -1,0 +1,24 @@
+- name: Wait for Caddy to generate its internal root CA
+  ansible.builtin.command: docker compose exec -T caddy test -f /data/caddy/pki/authorities/local/root.crt
+  args:
+    chdir: "{{ app_dir }}"
+  register: caddy_root_check
+  until: caddy_root_check.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+
+- name: Read Caddy root CA
+  ansible.builtin.command: docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt
+  args:
+    chdir: "{{ app_dir }}"
+  register: caddy_root
+  changed_when: false
+
+- name: Store Caddy root CA on the controller
+  ansible.builtin.copy:
+    content: "{{ caddy_root.stdout }}\n"
+    dest: "{{ playbook_dir }}/.artifacts/roots/{{ inventory_hostname }}.crt"
+    mode: "0644"
+  delegate_to: localhost
+  become: false

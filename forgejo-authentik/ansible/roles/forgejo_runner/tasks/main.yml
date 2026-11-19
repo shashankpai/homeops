@@ -1,0 +1,52 @@
+- name: Create runner directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /opt/forgejo-runner
+    - /opt/forgejo-runner/data
+
+- name: Check whether runner is already registered
+  ansible.builtin.stat:
+    path: /opt/forgejo-runner/data/.runner
+  register: runner_state
+
+- name: Template runner compose, env and config
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/opt/forgejo-runner/{{ item.dest }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { src: compose.yml.j2, dest: compose.yml, mode: "0644" }
+    - { src: env.j2, dest: .env, mode: "0600" }
+    - { src: config.yml.j2, dest: data/config.yml, mode: "0644" }
+
+- name: Generate global runner registration token on Forgejo
+  ansible.builtin.command: docker compose exec -T -u git forgejo forgejo forgejo-cli actions generate-runner-token
+  args:
+    chdir: /opt/forgejo
+  delegate_to: "{{ groups['forgejo'][0] }}"
+  register: runner_token
+  when: not runner_state.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Register runner with Forgejo
+  ansible.builtin.command: >
+    docker compose run --rm --no-deps runner register --no-interactive
+    --token {{ runner_token.stdout_lines | last }}
+    --name {{ inventory_hostname }}
+    --instance https://{{ forgejo_domain }}
+    --labels docker:docker://node:22-bookworm,ubuntu-latest:docker://node:22-bookworm
+  args:
+    chdir: /opt/forgejo-runner
+  when: not runner_state.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Start runner
+  ansible.builtin.command: docker compose up -d
+  args:
+    chdir: /opt/forgejo-runner
+  changed_when: false

@@ -1,0 +1,16 @@
+services:
+  runner:
+    image: {{ runner_image }}
+    restart: unless-stopped
+    entrypoint: ["forgejo-runner"]
+    command: ["daemon", "--config", "/data/config.yml"]
+    working_dir: /data
+    environment:
+      SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.pem
+    volumes:
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/trust/ca-bundle.pem:/etc/ssl/certs/ca-bundle.pem:ro
+    extra_hosts:
+      - "{{ forgejo_domain }}:${FORGEJO_HOST_IP}"
+      - "{{ authentik_domain }}:{{ authentik_ip }}"

@@ -1,0 +1,62 @@
+- name: Create Authentik directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /opt/authentik
+    - /opt/authentik/blueprints
+
+- name: Install Forgejo SSO blueprint
+  ansible.builtin.copy:
+    src: forgejo-blueprint.yaml
+    dest: /opt/authentik/blueprints/forgejo.yaml
+    mode: "0644"
+  notify: Restart authentik
+
+- name: Template Authentik compose, env and Caddyfile
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/opt/authentik/{{ item.dest }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { src: compose.yml.j2, dest: compose.yml, mode: "0644" }
+    - { src: env.j2, dest: .env, mode: "0600" }
+    - { src: Caddyfile.j2, dest: Caddyfile, mode: "0644" }
+  notify: Restart authentik
+
+- name: Start Authentik stack
+  ansible.builtin.command: docker compose up -d --remove-orphans
+  args:
+    chdir: /opt/authentik
+  register: authentik_up
+  changed_when: "'Started' in authentik_up.stderr or 'Recreated' in authentik_up.stderr or 'Created' in authentik_up.stderr"
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Authentik to become ready
+  ansible.builtin.uri:
+    url: http://127.0.0.1:9000/-/health/ready/
+    status_code: 200
+  register: ak_ready
+  until: ak_ready.status == 200
+  retries: 60
+  delay: 5
+
+- name: Wait for Forgejo OIDC application (blueprint applied by worker)
+  ansible.builtin.command: >
+    curl -fsk --resolve {{ authentik_domain }}:443:127.0.0.1
+    https://{{ authentik_domain }}/application/o/forgejo/.well-known/openid-configuration
+  register: oidc_disco
+  until: oidc_disco.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Export Caddy root CA
+  ansible.builtin.include_role:
+    name: trust
+    tasks_from: export
+  vars:
+    app_dir: /opt/authentik

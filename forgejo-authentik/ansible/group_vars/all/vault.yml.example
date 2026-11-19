@@ -1,0 +1,9 @@
+# Copy to vault.yml and encrypt:  ansible-vault encrypt group_vars/all/vault.yml
+# Put the vault password in ansible/.vault_pass (gitignored).
+vault_forgejo_db_password: "CHANGE_ME"
+vault_authentik_db_password: "CHANGE_ME"
+vault_authentik_secret_key: "CHANGE_ME_50_CHARS_MIN"
+vault_authentik_bootstrap_password: "CHANGE_ME"
+vault_authentik_bootstrap_token: "CHANGE_ME"
+vault_authentik_bootstrap_email: "admin@home.lab"
+vault_forgejo_oidc_client_secret: "CHANGE_ME"

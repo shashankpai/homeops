@@ -1,0 +1,14 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+# The API token is NOT stored here. Export it in your shell instead:
+#   export TF_VAR_pm_api_token='terraform@pve!tf=<secret>'
+pm_endpoint  = "https://192.168.1.23:8006/"
+pm_insecure  = true
+
+node_name           = "pve"
+image_datastore     = "local"
+vm_datastore        = "local-lvm"
+bridge              = "vmbr0"
+gateway             = "192.168.1.1"
+dns_servers         = ["192.168.1.1", "1.1.1.1"]
+admin_user          = "devops"
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"

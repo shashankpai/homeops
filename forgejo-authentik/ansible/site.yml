@@ -1,0 +1,27 @@
+- name: Base host setup
+  hosts: all
+  roles:
+    - common
+    - docker
+
+# Authentik first: Forgejo's OIDC discovery needs it up and its Caddy CA exported.
+- name: Authentik (IdP)
+  hosts: authentik
+  roles:
+    - trust
+    - authentik
+    - backup
+
+- name: Forgejo (git + governance)
+  hosts: forgejo
+  roles:
+    - trust
+    - forgejo
+    - backup
+
+# Runner needs Forgejo's Caddy CA in its trust bundle.
+- name: Forgejo runner
+  hosts: runner
+  roles:
+    - trust
+    - forgejo_runner
