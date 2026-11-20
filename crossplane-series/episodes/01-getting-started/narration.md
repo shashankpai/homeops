@@ -128,74 +128,75 @@ Versions note: we're on v2 — I'll flag where v1 differs as we go, because most
 
 [9:00]
 
-Here's a question nobody asks early enough, and it's the key to everything: after we installed Crossplane core... what can it actually *do*?
+Let's start this section with a question most tutorials skip, and it's the question that makes everything else click: after we installed Crossplane core — that Helm release from a minute ago — what can it actually *do*?
 
-The honest answer: almost nothing. And *by design*. Crossplane core has no idea what an S3 bucket is. It has never heard of Route 53. It doesn't even know what a namespace is — and it's *running inside Kubernetes*. The core knows exactly two jobs: how to *install and run packages*, and how to *watch resources and run their controllers*. Everything cloud-specific, everything useful, arrives later.
+The honest answer is: almost nothing. And I mean that as praise — it's *by design*. Crossplane core has no idea what an S3 bucket is. It has never heard of Route 53. It doesn't even know what a Kubernetes namespace is — and it's *running inside Kubernetes*. The core is deliberately, structurally ignorant of every infrastructure API on Earth. It knows exactly two jobs: how to *install and run packages*, and how to *manage the lifecycle of resources* those packages define. Everything useful arrives later, from outside.
 
-[9:30 — analogy]
+[9:35 — analogy]
 
-Think of it like a phone out of the box. The operating system is Crossplane core: it manages apps, runs them, updates them, kills them if they misbehave — but it ships without a single app. The app store? That's the Crossplane package ecosystem. And "apps" are called **providers**.
+The closest thing in your daily life is a phone out of the box. The operating system is Crossplane core: it can install apps, run them, update them, restart them when they crash — and it ships with *zero apps*. Nobody says "my phone can do video calls" — the *app* does video calls, on top of the OS. The app store is the Crossplane package ecosystem. And the apps are called **providers**.
 
-[9:50]
+[9:55]
 
-So when someone says "Crossplane can manage AWS" — that's imprecise, and the imprecision matters. *Crossplane* can't manage AWS. A **provider** — a package you install into Crossplane — can manage AWS. provider-aws, provider-gcp, provider-sql, provider-kubernetes... each one teaches the same control plane one new language.
+So when you hear someone say "Crossplane manages AWS" — hear the imprecision, because it matters: *Crossplane* can't manage AWS. A **provider package** — provider-aws — installed *into* Crossplane, can. Same for GCP, Azure, SQL, and the one we'll use today: Kubernetes itself. One control plane, any number of languages, installed one package at a time.
 
-[10:10 — the three things]
+[10:15 — the anatomy]
 
-And here's what I need you to remember, because it's the anatomy of every provider you will ever install. A provider is **three things, delivered as one OCI image**:
+And here is the anatomy. I want this on screen, because every provider you will ever install — today or in five years — is these **three things, shipped inside one OCI image**:
 
-**One — the vocabulary.** CRDs that define new resource kinds. Schema, fields, validation. When provider-kubernetes installs, your cluster learns a new word: `kind: Object`. When provider-aws installs, it learns *hundreds*: `Bucket`, `IAMRole`, `VPC`...
+**1. Vocabulary — the CRDs.** New resource *kinds*, with schema, fields, and validation. provider-kubernetes brings one kind: `Object`. provider-aws brings *hundreds*: `Bucket`, `IAMRole`, `VPC`, `ReplicationGroup`. This is the language the control plane learns.
 
-**Two — the workers.** The controllers for those kinds. A CRD without a controller is a suggestion — a schema nobody reads. The controllers are what watch your resources and go do the work.
+**2. Workers — the controllers.** A CRD with no controller is just a schema nobody reads — you could apply resources and they'd sit there, inert, forever. The controllers are the running code that watches those resources and goes out and does the work. This is where the intelligence lives.
 
-**Three — the identity.** A runtime: pods, service accounts — *who* those workers run as when they talk to the remote API.
+**3. Identity — the runtime.** The pods those workers run in, and the service accounts they run *as*. Because every worker eventually asks "who am I, when I talk to the API I manage?" — and that has to be an answer, not an accident.
 
-Vocabulary, workers, identity. Same image. Keep that shape in your head; we're about to watch all three parts appear live.
+Vocabulary. Workers. Identity. One image. Say it with me once, because we're literally going to watch all three materialize in the next three minutes.
 
-[11:00 — terminal]
+[11:15 — the plan]
 
-For this episode we're using `provider-kubernetes` — the provider whose "cloud" is this cluster itself. Why start here? Three reasons. No cloud account — you can follow along with just kind or k3s. No credentials — nothing to rotate, nothing to redact on screen. And everything it does is visible with kubectl — you can *see* every move it makes. The mental model we build here transfers unchanged to provider-aws later. It's training wheels that never need to come off.
+Today's provider: `provider-kubernetes` — the provider whose "cloud" is this cluster itself. I picked it for episode one for three reasons. *No cloud account* — you can follow along on kind or k3s at home. *No credentials* — nothing to rotate, nothing to blur on screen. And *full visibility* — everything it does, you can inspect with plain kubectl. And the mental model we're building transfers to provider-aws completely unchanged. This is the safest possible place to learn the pattern properly.
 
-[11:30 — terminal; manifest on screen]
+[11:40 — terminal; three files on screen]
 
-Three small files, in this order, and the order matters:
+Three files, and I want you to notice the *order* — it's deliberate:
 
 ```bash
-kubectl apply -f lab/providers/10-runtime-config.yaml   # pins the provider's SA name
-kubectl apply -f lab/providers/20-rbac.yaml             # grants that SA its powers
-kubectl apply -f lab/providers/00-provider.yaml          # the package itself
+kubectl apply -f lab/providers/10-runtime-config.yaml   # identity first: pin the SA name
+kubectl apply -f lab/providers/20-rbac.yaml              # identity second: grant its powers
+kubectl apply -f lab/providers/00-provider.yaml           # then: the package
 ```
 
-[11:50]
+Files one and two are the *identity* part of our anatomy, applied **before** the provider exists. That's not demo tidiness — that's a production principle: never let a provider's workers boot into more privilege than you planned for them. Identity before code. If you take one security habit from this episode, take this one.
 
-Files one and two are the *identity* part — we're doing it first so the provider's workers never exist without their permissions already in place. That's not a demo trick, that's how you should do it in production too: never let a provider boot into more privilege than you planned for it.
+Quickly, what each file does, because we'll lean on this in the next section. The *runtime config* says: "the provider's pods will run as a service account named `provider-kubernetes`" — a fixed, predictable name. The *RBAC* file binds that service account to a role that says what it may do. Today, for teaching, that role is broad — it can manage anything. In production you'd tighten it to exactly the kinds the provider handles: it manages namespaces, it gets namespaces — nothing else. **The provider is exactly as powerful as the role you give it.** That's not a caveat, that's a *feature* — more on that contrast in a second.
 
-[12:10 — watch it]
+[12:45 — watch the install]
 
-Now watch the package manager work. This is my favorite part of the whole episode:
+Now the package itself. Apply it, and watch the package manager do its work — I never get tired of this part:
 
 ```bash
+kubectl apply -f lab/providers/00-provider.yaml
 kubectl get provider provider-kubernetes -w
 ```
 
 ```
-PACKAGE                       INSTALLED   HEALTHY
-provider-kubernetes:v1.2.0
-provider-kubernetes:v1.2.0   True
-provider-kubernetes:v1.2.0   True        True
+PACKAGE                        INSTALLED   HEALTHY
+provider-kubernetes:v1.0.0
+provider-kubernetes:v1.0.0     True
+provider-kubernetes:v1.0.0     True        True
 ```
 
-Two conditions, flipping live, and each one has a precise meaning.
+Here's what happened behind those two words, step by step. The `Provider` resource is nothing but a pointer: "install this image". The core controller pulled the OCI image from the package registry, read its manifest, and executed an *installation*:
 
-**Installed** — the package manager pulled the OCI image from the registry, read its manifest, extracted the CRDs, applied them, and started the provider's runtime. The *app* finished installing.
+**Installed: True** means the image was pulled, and everything inside it was extracted and applied — CRDs registered, controllers deployed, runtime created. The app finished installing.
 
-**Healthy** — the controllers are up, connected to the API, and serving. The app isn't just installed, it's *running well*.
+**Healthy: True** means those controllers are *up and serving* — running, connected to the API, ready to reconcile. The app isn't just installed, it's working.
 
-Two words, two different failure modes. If Installed never goes True — that's usually a registry or network problem. If Installed is True but Healthy won't come — the controllers are crashing or can't authenticate. Watch *which* word is stuck, and you already know where to look. That's half of Crossplane debugging, right there.
+And notice — those two words are a *built-in diagnostic*. If Installed never flips True, your problem is getting the image: registry, network, version tag. If Installed is True but Healthy won't come, your problem is the controllers: crash-looping, or — and hold this thought for the next phase — *identity*. "Which word is stuck" is half of Crossplane debugging, before you've run a single other command.
 
-[13:10 — the CRDs appear]
+[13:35 — the vocabulary appears]
 
-Now the payoff. While that went Healthy, three things materialized that I never wrote. Let me show you:
+Now let's prove the vocabulary arrived. I never wrote any of this:
 
 ```bash
 kubectl get crd | grep kubernetes.crossplane.io
@@ -203,27 +204,25 @@ kubectl explain object
 kubectl get deployments -n crossplane-system
 ```
 
-A new CRD — `kind: Object`. And it's *documented*: `kubectl explain` works, because the schema shipped *inside the package*. I want to flag this, because it's the moment most people go "wait, what?" — **the CRDs came out of the package image.** You didn't define a resource kind for namespaces-as-code; the provider *brought it with it*. Your cluster's API just grew, on demand, from an image pull. That's what "provider" means: install it, and new infrastructure kinds simply exist.
+A brand-new CRD: `kind: Object`. And it's *documented* — `kubectl explain` teaches it back to me, because the schema shipped inside the image. This is the moment I've watched surprise even experienced Kubernetes people — so let it land: **the resource kinds came out of the package.** You didn't write a CRD for "namespaces-as-managed-resources". You didn't download one. You installed a provider, and your cluster's API grew new words, on demand, from an image pull. That is what "provider" *means*: vocabulary plus workers plus identity, arriving as one unit.
 
-And second: a new Deployment — the provider's controller pods, running in crossplane-system, with a service account whose name we pinned and whose powers we granted. The *workers* part of our anatomy. From now on, for the rest of this series, there is a little controller in this cluster whose entire purpose in life is to watch `Object` resources and make reality match them.
-
-[13:50 — the contrast, and a caution]
-
-So compare the two worlds. A Terraform provider is a *binary* — inert until a human invokes it, running with whatever credentials happen to be on that machine. A Crossplane provider is a *resident* — always on, using exactly the identity you gave it, scoped by RBAC you control. And that last point is real security engineering, not ceremony: the provider can only do what its service account allows. In production, don't do what we're doing today with a broad role — grant it only the kinds it manages. Least privilege, applied to your infrastructure control plane.
-
-[14:00 — recap]
-
-Recap, because this carries everything: a provider is vocabulary, workers, and identity in one image, installed by the package manager we booted in Phase 4, reporting its life story in two conditions — Installed and Healthy. But it's standing there with its hands in its pockets, because we haven't answered one question: *as whom* does it act? Let's give it an identity.
+And that new Deployment in crossplane-system — those are the workers. Controller pods whose entire purpose in life, from now until we uninstall them, is to watch `Object` resources and make reality match them. They're in there *right now*, watching an empty world, waiting for their first job. Let's give them one more piece before we do — identity.
 
 ---
 
-## Phase 6 — ProviderConfig: Identity Without Secrets (14:00 – 17:00)
+## Phase 6 — ProviderConfig: Identity, All the Way to the Cloud (14:00 – 19:00)
 
 [14:00]
 
-Every API asks the same first question: *who's asking?* Your cluster asks it constantly — every single kubectl command you've ever run was authenticated and authorized. So when our provider goes to manage objects in this cluster, guess what: it gets carded too. It needs an identity. That's what a ProviderConfig is — not credentials *in* Crossplane, but the answer to *which identity do my workers use, for this remote API*.
+Every API in existence asks the same first question: *who's asking?* You've lived this — every kubectl you've ever run was authenticated and authorized before the cluster lifted a finger. So here's the situation: we now have controller pods in this cluster whose job is to create and manage objects in... this cluster. And when they show up at the API server, the API server is going to card them, exactly like it cards you. **A provider needs an identity to do its job.** The ProviderConfig is where that identity is declared.
 
-[14:30 — the file, on screen; it's tiny on purpose]
+[14:30 — how pods authenticate at all]
+
+Let's zoom out for ninety seconds and make sure the mechanics are solid, because everything else today builds on it. How does *any* pod talk to the Kubernetes API?
+
+When you run kubectl, the request carries *your* credentials from your kubeconfig. A pod has no kubeconfig — what it has is a **service account**. Kubernetes automatically projects a token for that service account into every pod, at a well-known path, as a mounted volume. When the provider's controller wants to talk to the API server, it reads that token and presents it — and the API server says: "you are the `provider-kubernetes` service account." Everything the pod can do is then exactly what RBAC says that service account can do. Token in, authority out. That's the whole mechanism — no magic.
+
+Which means when our ProviderConfig says this:
 
 ```yaml
 apiVersion: kubernetes.crossplane.io/v1alpha1
@@ -235,47 +234,64 @@ spec:
     source: InjectedIdentity
 ```
 
-One word is doing all the work: `InjectedIdentity`. It means: **the provider pods use their own ServiceAccount as their identity.** No token file, no secret, no environment variable. When the provider talks to the API server, it presents the service account token that Kubernetes automatically mounts into every pod — the same identity we pinned in the runtime config and scoped with RBAC in the last phase. The pieces are all connected: the SA we named, the role we bound, and now the config that says *use it*.
+...one word is doing all the work: `InjectedIdentity` means **use the identity the controller already has — its own pod's service account.** The one we named in the runtime config, the one we carefully RBAC-bound *before* the provider existed. That's why those three files in the last phase went in that order. The pieces snap together: name the SA, bind the SA, then tell the provider "you *are* the SA." For managing things in your own cluster, the identity you need already exists — creating a secret to hold it would just be one more thing to leak.
 
-[15:20]
+[15:50 — the cloud question]
 
-Why is this elegant? For in-cluster management, the identity needed *already exists* — creating a secret to hold it would be redundant and just one more thing to leak. And here's the part that scales beyond this episode: on EKS or GKE, this *same source* can stand in front of cloud APIs too, through Workload Identity — where the platform maps that service account to a cloud role. One pattern, zero long-lived credentials, all the way up.
+Now — the question that actually matters for your career, not just this homelab: **what about the cloud?** A service account token is a Kubernetes thing. AWS has never heard of it. When provider-aws creates a bucket, it calls the AWS API, and AWS wants *AWS credentials*. How does the bridge work? There are two patterns, and knowing both — and when to use each — is the difference between a toy platform and a real one.
 
-[15:50 — the alternatives, and when]
+**Pattern one: static credentials in a Secret.** The classic. You create an IAM user (or role) for Crossplane, generate a key, store it in a Kubernetes Secret, and the ProviderConfig points at it:
 
-For the cases where you do need real credentials, look at the other sources, because you'll meet them in the wild:
+```yaml
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      name: aws-creds
+      key: key
+```
 
-- **Secret** — the classic: cloud keys stored as a Kubernetes Secret; the config references it by name. This is what you'd use with provider-aws in most clusters today.
-- **Environment** — credentials handed to the provider pod as environment variables, IRSA-style.
-- **FileSystem** — mounted credential files.
+The provider reads that Secret at reconcile time and signs its AWS calls. Simple, works everywhere, on any cluster, in any cloud, today. The trade-off: that key is long-lived. It's a copy of power, sitting in a Secret, and it has to be rotated — on a schedule, forever, or it quietly becomes your biggest liability. Kubernetes secrets are only as protected as your cluster's RBAC and etcd encryption.
 
-Don't memorize them. Memorize the *shape*: in every case, the credential is referenced, never inlined. Identity becomes a **resource in the API**, addressed by name.
+**Pattern two: Workload Identity — no credentials at all.** The modern answer, and the reason `InjectedIdentity` scales beyond this demo. Here's the trick, and it's genuinely elegant: you register your *cluster itself* with the cloud as an OIDC identity provider. The cloud says: "I will trust tokens signed by this cluster." Then you annotate a service account with the cloud role it should map to. When provider-aws needs to act, its controller presents its service-account token — the same projected token from a minute ago — and the cloud exchanges it, via OIDC federation, for short-lived cloud credentials. Keys are minted on demand, expire in hours, and *nobody ever stores one*. On EKS this is IRSA; on GKE, Workload Identity Federation; on AKS and self-managed clusters, plain OIDC federation — same idea, different names. And here's the kicker: from the ProviderConfig's point of view, it *looks* like InjectedIdentity — "use my own identity" — because the federation does the translation. The pattern you learned in this homelab lab *is* the production pattern.
 
-[16:20 — why "resources in the API" is a design win]
+[17:30 — the indirection, and why it's designed this way]
 
-And that shape buys you three things Terraform can't:
+Step back and look at the architecture, because there's a deliberate layer of indirection here — and the indirection is the value:
 
-**One — separation of powers.** The person who creates the ProviderConfig is not necessarily the person who creates managed resources. Platform team holds the credentials; app teams never see them.
+```
+managed resource  ──providerConfigRef──▶  ProviderConfig  ──▶  the actual identity
+     (I want a bucket)                      (how to authenticate)     (SA / Secret / OIDC role)
+```
 
-**Two — swapping.** Need a different set of credentials for a sandbox versus prod? Two ProviderConfigs. Each managed resource points at the one it wants — `providerConfigRef: name: prod-credentials` — and you can retarget a workload by editing one line.
+Every managed resource points at a ProviderConfig *by name*. The config is the only thing that knows where the identity lives. And because identity is a *resource in the API* — addressable, swappable, auditable — three things become possible that the "credentials in a pipeline" world can't give you:
 
-**Three — rotation.** Rotate the underlying Secret *once*, and every resource using that config picks it up on the next reconcile. Compare that with the Terraform world, where credentials live on whatever machine happens to run apply — and yes, the name `default` matters too: if a managed resource doesn't name a config explicitly, the provider looks for one called `default`. That's why ours is named that.
+**Separation of powers.** The platform team creates the ProviderConfig; they're the only humans who ever touch credentials. App teams create managed resources that *reference* it. They get the power without ever seeing the secret.
 
-[17:00]
+**Multiple identities, same cluster.** Two configs — `prod` and `sandbox` — pointing at different cloud accounts. A managed resource's one-line `providerConfigRef` decides which world it lands in. Retarget by editing one field.
 
-Identity solved, with zero secrets on screen. The provider is installed, healthy, and it knows who it is. Time to finally manage something — and I mean *really* look at how it's expressed, because this next YAML is the shape of everything to come.
+**Central rotation.** When the static key expires, you update *one Secret*, and every resource using that config picks up the new credentials on its next reconcile — no pipelines to rerun, no laptops to hunt down.
 
----
+And one detail worth knowing, because it explains the name: our config is called `default` because when a managed resource *doesn't* name a config, the provider looks for one with exactly that name. "default" is the fallback. In a real platform you might have a dozen configs and never use the default at all — but nothing breaks the day you forget to reference one.
 
-## Phase 7 — Managed Resources: The Atom of Crossplane (17:00 – 23:00)
+[18:45 — apply it]
 
-[17:00]
+```bash
+kubectl apply -f lab/providers/30-provider-config.yaml
+kubectl get providerconfigs.kubernetes.crossplane.io
+```
+
+Installed, identity granted, zero secrets on my screen — the most powerful thing in this episode is the thing I *didn't* have to type. The workers are running, they know who they are. Time to hand them their first job — and study the shape of it carefully, because it's the shape of everything.
+
+## Phase 7 — Managed Resources: The Atom of Crossplane (19:00 – 25:00)
+
+[19:00]
 
 Everything in Crossplane, no matter how sophisticated the abstraction, eventually bottoms out in the thing we're about to create. A **managed resource**. The atom.
 
 Definition, in one sentence: *a managed resource is one piece of real-world infrastructure, expressed as a Kubernetes resource, and kept correct by a provider's controller.* One row in your infrastructure — as a YAML object in etcd.
 
-[17:30 — the manifest, full screen; take your time]
+[19:30 — the manifest, full screen; take your time]
 
 Here's one. A namespace — but as Crossplane sees it:
 
@@ -297,7 +313,7 @@ spec:
 
 Let me walk every line, because **every managed resource in every provider for every cloud on Earth has this exact anatomy.** Learn it once, here, and you can read provider-aws YAML next month without blinking.
 
-[18:00 — field by field]
+[20:00 — field by field]
 
 `kind: Object` — the kind our provider installed in the last phase. provider-kubernetes's entire product line is one generic kind: "any Kubernetes object". Other providers have rich kind libraries — `Bucket`, `Cluster`, `ReplicationGroup`.
 
@@ -307,7 +323,7 @@ And now the big one: `spec.forProvider`. **Everything I actually want, lives her
 
 That's a quietly powerful design choice: **you're not learning a new language for each cloud.** The knowledge you already have of each API transfers inside `forProvider`; Crossplane only ever asks you to learn the wrapper. Terraform asks you to learn HCL *and* its resource model *and* the cloud's semantics. Crossplane asks for the semantics only.
 
-[19:40 — apply, watch]
+[21:40 — apply, watch]
 
 ```bash
 kubectl apply -f episodes/01-getting-started/manifests/01-managed-resources.yaml
@@ -327,11 +343,11 @@ Two words appeared. You will read these two words for the rest of your Crossplan
 
 The way I keep them straight: **Synced is about the messenger, Ready is about the package.** Synced means "your controller finished its errand without tripping." Ready means "the thing it went to get is actually in your hands." A database can be Synced and not Ready — ordered fine, still baking. It can even be Ready and not Synced — the database works, but the *last* observation failed. Two words, two axes. Check both, always.
 
-[21:10 — spec down, status up]
+[23:10 — spec down, status up]
 
 Now the contract underneath, and it's the oldest one in Kubernetes: **spec goes down, status comes up.** Everything I wrote was `forProvider` — my desire, handed to the API server. And everything the provider learned, it writes back in two other places: `status.atProvider` — what it *observed*, the real object as it actually is, your `terraform show` equivalent — and those two conditions. Desired state, down. Observed state, up. The gap between them is the controller's entire to-do list, every minute of every day.
 
-[21:40 — the real thing]
+[23:40 — the real thing]
 
 Proof time:
 
@@ -342,21 +358,21 @@ kubectl -n demo-team-a get configmap welcome -o yaml | grep -A6 metadata
 
 There it is — a namespace, created by a controller. And look at the annotations on the managed resource itself: `crossplane.io/external-name`, create-succeeded timestamps. The provider *signed its work*, and the ConfigMap's field manager says `provider-kubernetes/demo-team-a-welcome` — exactly the way a Deployment owner-references its ReplicaSets. Which means there is no state file holding "I created this": the ownership lives in the API, where anything can read it. `kubectl get` — what you just did — *is* `terraform state list`. All of it. Forever.
 
-[22:30 — the flip]
+[24:30 — the flip]
 
 And here's the mental flip that separates people who *get* Crossplane from people who use it. Before today, you probably thought of the real object — the namespace, the database — as the *real* thing, and any record of it as a shadow. Managed resources reverse that: **the managed resource in the API is the source of truth; the real object is the shadow.** The cloud object, the namespace, the ConfigMap — they're just the *current output* of a declaration. Delete the shadow, it comes back. Change the declaration, the shadow changes. Everything you watch Crossplane do next is this one sentence, demonstrated at increasing speed.
 
-[23:00]
+[25:00]
 
 One last connection before we play with it: this same anatomy — `forProvider`, `providerConfigRef`, Ready/Synced, spec-down-status-up — is what a `Bucket` looks like in AWS, an `IamRolePolicy`, a Redis replication group. Different kind, different provider, *identical shape*. We're going to prove how well you've internalized it — by putting it under attack.
 
-## Phase 8 — The Drift Fight (23:00 – 27:30)
+## Phase 8 — The Drift Fight (25:00 – 29:30)
 
-[23:00]
+[25:00]
 
 Now the segment this whole episode exists for. I'm going to do the thing every ops team fears: hand-edit production. Watch.
 
-[23:10 — terminal]
+[25:10 — terminal]
 
 ```bash
 kubectl -n demo-team-a delete configmap welcome
@@ -365,7 +381,7 @@ kubectl -n demo-team-a get configmap welcome   # NotFound
 
 Gone. Now — in Terraform-world, this is the part where nothing happens until the next pipeline run. In Crossplane-world, the provider is watching that managed resource, and it polls and watches actual state. "What exists is not what was asked for." A level-triggered controller doesn't care *how* it diverged. Console click, defiant colleague, cosmic ray — same answer: fix it.
 
-[23:50 — poll loop]
+[25:50 — poll loop]
 
 ```bash
 while ! kubectl -n demo-team-a get configmap welcome &>/dev/null; do
@@ -373,11 +389,11 @@ while ! kubectl -n demo-team-a get configmap welcome &>/dev/null; do
 done
 ```
 
-[24:30 — healed]
+[26:30 — healed]
 
 And it's back — about ten seconds in this lab. I fought the control plane, and the control plane won.
 
-[24:45]
+[26:45]
 
 Deletion was attack one. Attack two — someone doesn't delete, they *edit*:
 
@@ -388,7 +404,7 @@ kubectl -n demo-team-a patch configmap welcome \
 
 Sneakier — the object exists, `kubectl get` looks fine, but the data is wrong. Drift that pipelines are *specifically* blind to, because the object still exists. Give it a reconcile cycle — we set the provider's poll to thirty seconds — and the message is back to what the managed resource says. The provider overwrote the edit. One footnote worth knowing: that works because we pinned provider-kubernetes v1.2.0, which uses server-side apply. Older versions only compare against an annotation and would *never* notice this edit.
 
-[25:40]
+[27:40]
 
 Attack three — flip it around. What happens if I delete the *managed resource*, not the object?
 
@@ -399,23 +415,23 @@ kubectl -n demo-team-a get configmap welcome   # NotFound!
 
 Cascade delete. The MR owned that ConfigMap, so when I remove the MR, the provider removes the thing. `terraform destroy` — but per-resource, instantly, no plan review screen.
 
-[26:20]
+[28:20]
 
 Recap the three attacks and the three correct responses: delete → recreate; edit → revert; delete-the-MR → cascade. That's a control loop doing level-triggered reconciliation. And here's the kicker for the Terraform comparison: Terraform's response to all three is the same — "run plan and find out."
 
-[27:00]
+[29:00]
 
 Hold on though — "Crossplane deletes my infrastructure when I delete a YAML object" is also how you *lose* infrastructure by accident. Crossplane thought about that: `deletionPolicy`. Default is Delete — what you just saw. But I can set `Orphan`: delete the managed resource, and the real object stays behind, unmanaged. That's how you *adopt* existing infrastructure — you manage it, learn from it, and if you ever want to stop managing it, you walk away without destroying anything. We'll flip that flag live in a second. First — let's build the API.
 
 ---
 
-## Phase 9 — XRDs: Publish Your Own Kind (27:30 – 30:30)
+## Phase 9 — XRDs: Publish Your Own Kind (29:30 – 32:30)
 
-[27:30]
+[29:30]
 
 Everything so far: Crossplane managing things, one object at a time. It's neat, but honestly Terraform does that too. *This* is the segment Terraform cannot follow.
 
-[27:45]
+[29:45]
 
 Watch this file. It's a CompositeResourceDefinition — an XRD:
 
@@ -435,11 +451,11 @@ spec:
           spec: {slug, replicas, image}
 ```
 
-[28:20]
+[30:20]
 
 Read what this is: I am defining an API group — `demo.crossplane.io`, my group, next to `apps` and `batch` — with a kind called WebApp, namespaced so teams can own and RBAC-scope them, with a schema: required `slug`, optional `replicas` defaulting to 2, optional `image`. Plain OpenAPI, exactly like any CRD you've written.
 
-[28:50 — terminal]
+[30:50 — terminal]
 
 ```bash
 kubectl apply -f episodes/01-getting-started/manifests/02-xrd.yaml
@@ -449,19 +465,19 @@ kubectl explain webapp
 
 Kubernetes just learned a new word. `kubectl explain` teaches it back to me. If I create a WebApp right now, it gets stored... and then sits there forever, because nothing *handles* it yet. There's no controller for "webapp". Interesting state, isn't it? The API exists; the meaning doesn't. Let's give it meaning.
 
-[29:50]
+[31:50]
 
 Meaning in Crossplane comes from a Composition. And the reason I slowed down on the XRD is this contrast: with Terraform, if I wrap complexity in a module — the consumer still reads and writes Terraform. Here, the consumer *only ever sees the API*. `kind: WebApp`, three fields, full stop. The complexity lives behind it, in the composition — and that's what a platform *is*. An API with opinions behind it.
 
 ---
 
-## Phase 10 — Compositions and Functions (30:30 – 35:00)
+## Phase 10 — Compositions and Functions (32:30 – 37:00)
 
-[30:30]
+[32:30]
 
 The composition is the recipe: when someone creates a WebApp, here's everything they get and how it's built. Ours composes three resources: a deployment, a service, and a configmap — a tiny compliant environment for a team's web app, inside the team's own namespace. Why no Namespace resource? Because a namespaced WebApp can only compose things *in its own namespace*; the namespace is something the platform team creates once per team.
 
-[30:50]
+[32:50]
 
 But first — v2 changed how compositions work, and it's a change for the better. In v1, a composition had built-in patching logic and you'd have these enormous YAML files full of patch rules. In v2, a composition is a **pipeline of functions**. Look at the shape:
 
@@ -476,15 +492,15 @@ pipeline:
     functionRef: {name: function-auto-ready}
 ```
 
-[31:30]
+[33:30]
 
 And here's the mental model everyone misses, so let me be really precise. Functions do not create anything. When a WebApp appears, the composition controller starts a **render**: it takes the WebApp — what the user asked for — and passes it into function one. Function one is `patch-and-transform`, a container that takes templates plus patches and returns a list of *desired* resources: "here's the deployment, replicas from spec.replicas, image from spec.image or the default; here's the service; here's the configmap." It returns *paperwork*. It also returns readiness checks — the deployment counts as ready when it's Available; the service and configmap are ready on creation. Then function two, `auto-ready`, looks at the rendered resources and decides when the WebApp can be called Ready. Those readiness checks matter: plain Kubernetes objects don't report a Ready condition, and without them the WebApp would sit at 'unready' forever. Then — and only then — the composition controller actually creates and updates those resources and streams their status back into the WebApp. Functions render. Controllers create.
 
-[32:40]
+[34:40]
 
 Why is this good? Because the pipeline is pluggable. Don't like patch-and-transform's YAML? Swap in `function-go-templating` and write Helm-style templates. Or KCL. Or write your own function in Python or Go — it's just a container. That's a whole season of this series, and it starts from this exact lab.
 
-[33:10 — terminal]
+[35:10 — terminal]
 
 ```bash
 kubectl apply -f lab/providers/40-functions.yaml
@@ -494,7 +510,7 @@ kubectl apply -f episodes/01-getting-started/manifests/03-composition.yaml
 
 Same install story — functions are packages too, pulled as OCI images, installed by the same package manager. Consistency is a feature.
 
-[33:50 — the killer feature]
+[35:50 — the killer feature]
 
 Now let me show you something Terraform genuinely cannot do. I can render this composition *completely offline*:
 
@@ -505,15 +521,15 @@ crossplane render episodes/01-getting-started/manifests/04-webapp.yaml \
 
 All three resources, printed, exactly as they'd be created — and no cluster was involved. Functions are containers; the render runs them locally. This is `terraform plan` — pure, offline, no state file — and you can run it in CI on every PR to your platform definition. You can *unit-test your platform*.
 
-[34:50]
+[36:50]
 
 XRD defines the API. Composition gives it meaning. Now let's use it.
 
 ---
 
-## Phase 11 — The Payoff: A WebApp (35:00 – 40:00)
+## Phase 11 — The Payoff: A WebApp (37:00 – 42:00)
 
-[35:00 — the whole file on screen; let it breathe]
+[37:00 — the whole file on screen; let it breathe]
 
 This is everything a developer writes — into the team's namespace, which the platform team created once:
 
@@ -528,7 +544,7 @@ spec:
 
 Seven lines. No deployment YAML, no service YAML, no configmap YAML, no copying the "standard deployment" from the last team's repo. They ask for an app; the platform does the rest.
 
-[35:40 — terminal]
+[37:40 — terminal]
 
 ```bash
 kubectl apply -f episodes/01-getting-started/manifests/00-team-namespace.yaml
@@ -538,7 +554,7 @@ kubectl -n payments-team get webapp payments -w
 
 Watch the status go Ready — that's auto-ready doing its job, checking all three composed resources. And:
 
-[36:10]
+[38:10]
 
 ```bash
 kubectl -n payments-team get all,cm
@@ -546,7 +562,7 @@ kubectl -n payments-team get all,cm
 
 There it is. The deployment — podinfo, running, two replicas — the service, the configmap. One resource in, an environment out. And the status flowed back the other way: the WebApp's conditions summarize everything composed beneath it. You can build dashboards off *that*.
 
-[36:50 — the tree]
+[38:50 — the tree]
 
 Now the tool that will follow you around forever:
 
@@ -564,7 +580,7 @@ WebApp/payments (payments-team)              True     True    Available
 
 The full dependency tree, live. When something's wrong, you don't guess — you trace, you find which composed resource is unhappy, you look at *its* events. Incident response for infrastructure, the kubectl way.
 
-[37:30 — updates: the chain of loops]
+[39:30 — updates: the chain of loops]
 
 Now updates — this is where it gets philosophically beautiful. Watch what happens when I change the spec:
 
@@ -575,16 +591,16 @@ watch kubectl -n payments-team get deployment webapp
 
 Four replicas. But think about the chain that just fired: I patched the WebApp — the composition controller re-renders — patch-and-transform copies spec.replicas into the deployment template — the controller updates the composed Deployment — and the *plain Kubernetes* Deployment controller does the rolling update. A chain of control loops, each doing one job, composing into platform behavior. Nobody restarted anything. No pipeline ran. `kubectl patch` to scale an environment.
 
-[38:50 — prove it works]
+[40:50 — prove it works]
 
 And it's real infrastructure, so let's use it:
 
 ```bash
-kubectl -n payments-team port-forward service/webapp 9898:9898 &
+kubectl -n payments-team port-forward service/webapp 98101:3898 &
 curl localhost:9898/
 ```
 
-[39:20 — delete]
+[41:20 — delete]
 
 And the final power move — cleanup:
 
@@ -597,9 +613,9 @@ Delete the WebApp on the API, the platform deletes everything it composed. Seven
 
 ---
 
-## Phase 12 — The Honest Verdict: Crossplane vs Terraform (40:00 – 44:00)
+## Phase 12 — The Honest Verdict: Crossplane vs Terraform (42:00 – 46:00)
 
-[40:00 — table on screen]
+[42:00 — table on screen]
 
 Time to pay off the promise from the intro. The full, honest comparison.
 
@@ -613,11 +629,11 @@ Time to pay off the promise from the intro. The full, honest comparison.
 
 **Updates and day-2.** Re-run the pipeline, versus... patch the resource. And GitOps fits for free: Argo CD syncing Crossplane resources is just Argo CD doing what it already does.
 
-[41:40 — and now the case FOR Terraform]
+[43:40 — and now the case FOR Terraform]
 
 But this table has two columns, and I promised honesty. Terraform is fifteen years old, with providers for nearly everything on Earth. Crossplane's provider ecosystem is younger, and cloud coverage is real but patchier. If your infra is a one-shot, brownfield, or your org already breathes HCL — Terraform is the *correct* answer, and v2 churn means old Crossplane tutorials will actively mislead you today. It's a younger technology and you should price that in.
 
-[42:30 — the litmus test]
+[44:30 — the litmus test]
 
 So here's the litmus test I use. Ask: *"Who notices when someone changes infrastructure by hand at 2am?"* If the answer is "the next time a human runs a pipeline" — you have a pipeline, and you should know that's what you have. If the answer is "a controller, within a minute" — you have a control plane.
 
@@ -625,6 +641,6 @@ So here's the litmus test I use. Ask: *"Who notices when someone changes infrast
 - Infra as a product for many teams, kubectl-and-GitOps as the interface, drift matters → **Crossplane**.
 - And in practice: both. Terraform builds the cluster. Crossplane runs inside it. This lab? Terraform built these very VMs, and Crossplane just ran on top of them. No irony wasted.
 
-[43:40 — wrap]
+[45:40 — wrap]
 
 Everything you saw today is in the repo: the install, the provider, the XRD, the composition, every command from this episode in a runnable lab guide — go break it, that's what it's for. Next episode: compositions in depth — real functions, dependencies between resources, versioning your platform API like a product. Subscribe, and I'll see you in the control plane.

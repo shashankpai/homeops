@@ -1,9 +1,9 @@
 # Episode 1 — Storyboard: Crossplane Getting Started
 
-**Target length:** ~45 min (long is fine — this is the reference/getting-started episode). **Hook style:** show-the-miracle-first, then build the understanding, like under-the-hood Ep 1.
+**Target length:** ~46 min (long is fine — this is the reference/getting-started episode). **Hook style:** show-the-miracle-first, then build the understanding, like under-the-hood Ep 1.
 
 > Narration is verbatim in `narration.md` (12 phases, timestamped). This file is the production map.
-> **Phases 5–7 are the conceptual core** — providers, identity, managed resources — paced slowly on purpose (~14 min combined). Every later episode stands on them; give them the best takes.
+> **Phases 5–7 are the conceptual core** — providers, identity, managed resources — paced slowly on purpose (~10 min combined). Every later episode stands on them; give them the best takes.
 
 ## Segment map
 
@@ -13,14 +13,14 @@
 | 2 | The problem | 1:30–4:00 | Pipeline diagram; state file liabilities | Pipeline model's three structural flaws; consumers read HCL |
 | 3 | Control plane model | 4:00–7:00 | Deployment loop reused for infra; side-by-side diagram | The one-sentence thesis. Honesty beat: "it's operators." |
 | 4 | Install | 7:00–9:00 | helm upgrade --install; CRD count | "One release. Everything else arrives as packages." v2 version note |
-| 5 | **Providers — the core, take your time** | 9:00–14:00 | App-store analogy; vocabulary/workers/identity anatomy; Provider -w; new CRD + Deployment appear | "Core can do nothing — by design." Installed vs Healthy = half of debugging. CRDs come *out of the package*. Security: SA+RBAC is real least-privilege work |
-| 6 | **ProviderConfig — identity without secrets** | 14:00–17:00 | The 5-line InjectedIdentity file; credential-source table | "Every API cards you." Identity as a resource: separation, swapping, rotation. Why the name is `default` |
-| 7 | **Managed resources — the atom** | 17:00–23:00 | Field-by-field YAML walk; READY/SYNCED -w; annotations on the real object | forProvider = remote API's own YAML embedded. "Synced = messenger, Ready = package." Spec down/status up. **The flip: the MR is the truth, the object is the shadow** |
-| 8 | Drift fight | 23:00–27:30 | 3 attacks: delete → heal; edit → revert; delete MR → cascade | The centerpiece. Timer overlay. deletionPolicy teaser |
-| 9 | XRD | 27:30–30:30 | XRD YAML; kubectl explain | "Kubernetes learned a new word." API vs modules |
-| 10 | Composition + functions | 30:30–35:00 | Pipeline YAML; offline `crossplane render` | Functions render, controllers create. Offline render = unit-testing the platform |
-| 11 | WebApp payoff | 35:00–40:00 | 7-line YAML → environment; trace tree; patch replicas 2→4; curl; delete → clean | Update = chain of control loops. Trace = incident response |
-| 12 | Verdict: vs Terraform | 40:00–44:00 | Comparison table; litmus test | Both columns honestly; "who notices a 2am change?"; Terraform built this lab |
+| 5 | **Providers — the core, take your time** | 9:00–14:00 | App-store analogy; vocabulary/workers/identity anatomy; identity-before-code install order; Provider -w; new CRD + Deployment appear | "Core can do nothing — by design." Installed vs Healthy = a built-in diagnostic (which word is stuck?). CRDs come *out of the package*. SA+RBAC = real least-privilege work |
+| 6 | **ProviderConfig — identity, all the way to the cloud** | 14:00–19:00 | SA-token mechanics diagram; InjectedIdentity file; Secret vs Workload Identity (IRSA/OIDC) comparison; the indirection diagram | How pods authenticate at all (token in, authority out). Then the cloud bridge: static Secret vs OIDC federation — no long-lived keys. Separation of powers, multiple configs, central rotation, why `default` |
+| 7 | **Managed resources — the atom** | 19:00–25:00 | Field-by-field YAML walk; READY/SYNCED -w; annotations on the real object | forProvider = remote API's own YAML embedded. "Synced = messenger, Ready = package." Spec down/status up. **The flip: the MR is the truth, the object is the shadow** |
+| 8 | Drift fight | 25:00–29:30 | 3 attacks: delete → heal; edit → revert; delete MR → cascade | The centerpiece. Timer overlay. deletionPolicy teaser |
+| 9 | XRD | 29:30–32:30 | XRD YAML; kubectl explain | "Kubernetes learned a new word." API vs modules |
+| 10 | Composition + functions | 32:30–37:00 | Pipeline YAML; offline `crossplane render` | Functions render, controllers create. Offline render = unit-testing the platform |
+| 11 | WebApp payoff | 37:00–42:00 | 7-line YAML → environment; trace tree; patch replicas 2→4; curl; delete → clean | Update = chain of control loops. Trace = incident response |
+| 12 | Verdict: vs Terraform | 42:00–46:00 | Comparison table; litmus test | Both columns honestly; "who notices a 2am change?"; Terraform built this lab |
 
 ## Assets to prepare
 

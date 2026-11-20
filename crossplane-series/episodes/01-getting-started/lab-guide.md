@@ -370,74 +370,111 @@ kubectl get providerconfigs.kubernetes.crossplane.io
 
 ## 9. Install a Provider (and what a provider actually IS)
 
-**Make:** `make xp-provider` (runtime config, RBAC, provider, waits for Healthy).
+Guided: `make crossplane-install` runs steps a–c below, then waits on health.
 
-**Manual** (mirrors what `make xp-provider` does):
+### The concept first (say this before typing)
+
+Crossplane core is deliberately ignorant of every infrastructure API on
+Earth. It knows two jobs: install packages, and manage the lifecycle of what
+they define. Everything useful arrives as a **provider package** — an OCI
+image that ships three things:
+
+| Part of a provider | What it is | Where you'll see it today |
+|---|---|---|
+| **Vocabulary** | CRDs: new resource kinds + schema | `kind: Object` appears in `kubectl get crd` |
+| **Workers** | controllers that watch + act | a new Deployment in `crossplane-system` |
+| **Identity** | pods + service account they run as | the SA we pin + RBAC-bind below |
+
+> Phone analogy for the camera: core = the OS; providers = apps. "Crossplane
+> manages AWS" is really "provider-aws, installed into Crossplane, manages
+> AWS." One control plane, any number of languages.
+
+### The order is a security principle: identity *before* code
 
 ```bash
-# a. Runtime config — fixes the provider's ServiceAccount name so our RBAC
-#    binding has something predictable to point at
+# a. Runtime config — pin the provider's ServiceAccount NAME
+#    (predictable, so the RBAC binding can target it)
 kubectl apply -f lab/providers/10-runtime-config.yaml
 
-# b. RBAC — let the provider manage objects in this cluster
+# b. RBAC — grant that SA its powers, before the workers exist
 kubectl apply -f lab/providers/20-rbac.yaml
 
-# c. The Provider itself — the package
+# c. The package itself — now it can only boot into power you already scoped
 kubectl apply -f lab/providers/00-provider.yaml
 ```
 
-Now watch the package manager work — this is worth showing slowly:
+**Why this order matters:** never let a provider's workers start with more
+privilege than you planned. Today's role is broad (teaching lab); in
+production, scope the ClusterRole to exactly the kinds the provider manages.
+*The provider is exactly as powerful as the role you give it* — that's a
+feature, not a caveat.
+
+### Watch the package manager work
 
 ```bash
 kubectl get provider provider-kubernetes -w
-# PACKAGE                          INSTALLED   HEALTHY   ...
-# provider-kubernetes:v1.2.0       True        True
-
-# While that goes Healthy, a Deployment appeared out of nowhere:
-kubectl get deployments -n crossplane-system
-# crossplane, provider-kubernetes-<hash>
-
-# And new CRDs landed — the provider's product line:
-kubectl get crd | grep kubernetes.crossplane.io
-# objects.kubernetes.crossplane.io   (kind: Object)
-# ...
 ```
 
-What happened, step by step:
+```
+PACKAGE                        INSTALLED   HEALTHY
+provider-kubernetes:v1.0.0     True        True
+```
 
-1. The `Provider` resource says "install package `xpkg.upbound.io/...`"
-2. The core package manager **pulled the OCI image**, read its manifest
-3. It **extracted the CRDs** inside the image and applied them — that's
-   where `kind: Object` came from; *you* didn't write that CRD
-4. It **created a Deployment** (the provider's controller) and a
-   ServiceAccount (from our DeploymentRuntimeConfig)
-5. It flipped the `Installed` and `Healthy` conditions you watched
+The two conditions are a built-in diagnostic — teach them explicitly:
 
-> **On camera:** "A provider is three things in one: the schema for new
-> resource kinds (CRDs), the controllers that manage them, and a
-> runtime identity. Delivered as an OCI image. Terraform providers are
-> binaries you invoke; Crossplane providers are containers that run forever."
+| Condition | Meaning | If it's stuck, suspect |
+|---|---|---|
+| `Installed` | image pulled; CRDs extracted + applied; runtime deployed | registry/network/version tag |
+| `Healthy` | controllers up, connected, serving | crash-looping, **identity/RBAC problems** |
 
-**Why provider-kubernetes for episode 1?** No cloud account, no credentials
-to rotate on camera, every viewer can run it — and the drift demo (Section
-12) is pure Kubernetes, visible with tools you already know. The exact same
-mental model then transfers to `provider-aws` in Season 5.
+"Which word is stuck" is half of Crossplane debugging before running
+anything else.
 
-## 10. Credentials: ProviderConfig and InjectedIdentity
+### Prove all three parts arrived
 
-**Make:** `make xp-providerconfig`.  **Manual:** `kubectl apply -f lab/providers/30-provider-config.yaml`
+```bash
+# vocabulary — the CRDs came OUT of the package image:
+kubectl get crd | grep kubernetes.crossplane.io
+kubectl explain object                       # schema shipped inside the image
 
-Before the provider can manage anything, it needs to know *as whom*. That's
-the `ProviderConfig`:
+# workers — the provider's controllers, watching for Objects right now:
+kubectl get deployments -n crossplane-system
+kubectl get pods -n crossplane-system -o custom-columns=\
+  NAME:.metadata.name,SA:.spec.template.spec.serviceAccountName
+```
+
+> **On camera:** "I never wrote a CRD for namespaces-as-managed-resources.
+> I installed a provider, and the cluster's API grew new words — from an
+> image pull. That's what 'provider' means: vocabulary, workers, identity,
+> arriving as one unit."
+
+## 10. Credentials: Identity, All the Way to the Cloud
+
+### The question every API asks: *who's asking?*
+
+The provider's controllers create objects **in this cluster**, and the API
+server authenticates them exactly like it authenticates your kubectl. So
+before it can act, the provider needs an identity — that's the ProviderConfig.
+
+### 90-second mechanics: how pods authenticate at all
+
+- Your kubectl presents *your* kubeconfig credentials.
+- A pod has no kubeconfig. Kubernetes projects a **service-account token**
+  into every pod (mounted volume, well-known path), minted via the
+  TokenRequest API and rotated automatically by the kubelet.
+- When the provider's controller calls the API server, it presents that
+  token → "you are the `provider-kubernetes` SA" → it may do exactly what
+  RBAC allows that SA to do.
+- Token in, authority out. No magic — and no secrets to manage.
+
+### InjectedIdentity — "use the identity you already have"
 
 ```bash
 kubectl apply -f lab/providers/30-provider-config.yaml
 kubectl get providerconfigs.kubernetes.crossplane.io
-# NAME      AGE
-# default   3s
 ```
 
-The file, in full (it's tiny — show it):
+The file (show it — it's tiny on purpose):
 
 ```yaml
 apiVersion: kubernetes.crossplane.io/v1alpha1
@@ -449,25 +486,81 @@ spec:
     source: InjectedIdentity
 ```
 
-What `InjectedIdentity` means: the provider pods use **their own
-ServiceAccount** — the one we RBAC-bound in Section 9 — as their identity.
-No secret, no token file, nothing to leak. In this lab, that ServiceAccount
-can create anything in the cluster; on a real platform you'd scope the
-ClusterRole down to exactly the kinds the provider should manage.
+`InjectedIdentity` = **the provider uses its own pod's service account** —
+the one we named (§9a) and RBAC-bound (§9b) *before* it existed. For
+managing things in your own cluster, the identity already exists; making a
+Secret to hold it would just be one more thing to leak.
 
-The alternatives (name them, don't demo them):
+### The question that matters for production: how does a provider reach the CLOUD?
 
-| `credentials.source` | Use when |
-|---|---|
-| `InjectedIdentity` | managing in-cluster resources (this episode) or with Workload Identity (EKS/GKE) |
-| `Secret` | classic: cloud keys in a K8s Secret (Reference + key) |
-| `Environment` | creds from the provider pod's env (IRSA-style) |
-| `FileSystem` | mounted credential files |
+A service-account token is a Kubernetes thing — AWS has never heard of it.
+When provider-aws creates a bucket, AWS wants *AWS credentials*. Two
+patterns (know both, and when to use each):
 
-> **On camera:** "Notice the shape: credentials are *resources in the API*,
-> referenced by name from every managed resource. Rotate once, everything
-> picks it up. Compare with Terraform: credentials live on the laptop of
-> whoever runs apply."
+**Pattern 1 — static credentials in a Secret** (works everywhere, today):
+
+```yaml
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      name: aws-creds        # a Secret with the IAM user's access keys
+      key: key
+```
+
+Simple and universal — but the key is **long-lived**: a copy of power
+sitting in a Secret that must be rotated on a schedule, forever.
+
+**Pattern 2 — Workload Identity / OIDC federation** (no credentials stored
+at all — the production pattern):
+
+1. Register your **cluster** with the cloud as an OIDC identity provider
+   ("I will trust tokens signed by this cluster")
+2. Annotate the provider's service account with the cloud role it maps to
+3. The provider's controller presents its service-account token; the cloud
+   **exchanges it via OIDC federation for short-lived cloud credentials**
+
+Keys are minted on demand and expire in hours; nobody ever stores one.
+On EKS this is **IRSA**, on GKE **Workload Identity Federation**, on
+AKS/self-managed it's plain OIDC federation — same idea, different names.
+And from the ProviderConfig's point of view it *looks like* InjectedIdentity
+("use my own identity") because federation does the translation — the
+homelab pattern is the production pattern.
+
+| Source | When | Secret stored? |
+|---|---|---|
+| `InjectedIdentity` | in-cluster targets; cloud via Workload Identity/IRSA | no |
+| `Secret` | cloud keys on any cluster (classic) | yes — rotate on schedule |
+| `Environment` | creds via provider pod env (IRSA-style) | no (injected) |
+| `FileSystem` | mounted credential files | no (mounted) |
+
+### The indirection IS the design
+
+```
+managed resource ──providerConfigRef──▶ ProviderConfig ──▶ actual identity
+  (I want a bucket)                        (how to auth)      (SA / Secret / OIDC role)
+```
+
+Because identity is a **resource in the API** — addressable, swappable,
+auditable — you get three things pipelines can't give you:
+
+1. **Separation of powers** — platform team holds the ProviderConfig; app
+   teams only reference it by name. Power without ever seeing the secret.
+2. **Multiple identities, one cluster** — `prod` and `sandbox` configs →
+   different cloud accounts; a one-line `providerConfigRef` retargets a
+   resource between worlds.
+3. **Central rotation** — update one Secret; every resource using that
+   config picks it up on the next reconcile. No pipelines to rerun.
+
+> **Why the name `default`:** if a managed resource omits
+> `providerConfigRef`, the provider looks for a config named exactly
+> `default`. Real platforms run a dozen configs and never use it — but
+> nothing breaks the day you forget to reference one.
+
+> **On camera (the closing line for this section):** "The most powerful
+> thing in this episode is the thing I didn't have to type — zero secrets
+> on screen, and the same pattern scales to AWS with no long-lived keys
+> at all."
 
 ## 11. Your First Managed Resources
 
