@@ -826,59 +826,111 @@ front, swappable implementation behind — is the core platform pattern.
 
 ## 15. The Composition — a Pure Function for Your Platform
 
+### Get your bearings first: three files, three roles
+
+| File | What it is | Its job |
+|---|---|---|
+| `manifests/02-xrd.yaml` | the XRD | *publishes* the API — `kind: WebApp` + schema (§14) |
+| `manifests/03-composition.yaml` | the Composition | *defines the meaning* — the recipe (this section) |
+| `manifests/04-webapp.yaml` | a WebApp | what a *consumer* writes — 9 lines (§16) |
+
+Everything in this section lives in `03-composition.yaml`.
+
 ### The one-sentence mental model
 
 > **A composition is a pure function: WebApp in, list of resources out.**
 
 Same input → same output, every time. It never talks to the cluster, never
 creates anything, never keeps state. In v2, compositions are **pipelines of
-functions**, and the pipeline is: *functions render, controllers create.*
+functions**, and the rule to keep above all others:
 
-### The render, step by step (narrate this slowly)
+> **Functions render (return paperwork). Controllers create.**
 
-```
-WebApp created in etcd
-        │
-        ▼
-composition controller starts a render
-        │
-        ▼
-┌─ function 1: patch-and-transform ─────────────────────┐
-│  templates (namespace/deploy/service/cm) + patch     │
-│  rules (spec.slug -> ns name, spec.replicas -> ...)   │
-│  RETURNS: 4 desired resources ("paperwork")           │
-└───────────────────────┬───────────────────────────────┘
-                        ▼
-┌─ function 2: auto-ready ─────────────────────────────┐
-│  defines WHEN the XR counts as Ready                  │
-└───────────────────────┬───────────────────────────────┘
-                        ▼
-composition controller DIFFS against the cluster:
-  missing → create · changed → update · removed → delete
-  status flows back up into the WebApp's conditions
-```
-
-One patch rule explains all of them — show this on screen:
+### The top of the file: the pipeline
 
 ```yaml
-- type: FromCompositeFieldPath
-  fromFieldPath: spec.slug      # from the user's WebApp...
-  toFieldPath: metadata.name    # ...into the namespace template's name
+spec:
+  compositeTypeRef:
+    apiVersion: demo.crossplane.io/v1alpha1
+    kind: WebApp              # "I define what a WebApp means"
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform
+      functionRef: {name: function-patch-and-transform}
+      input:
+        resources: [...]      # the recipe body — 4 resource recipes
+    - step: automatically-mark-ready
+      functionRef: {name: function-auto-ready}
 ```
 
-**Functions return paperwork.** They don't create anything — that's why the
-output is called a *render*, and why the whole thing is testable.
+### The recipe body: every resource entry = template + patches
+
+Zoom into the FIRST entry in `resources` (the namespace). Every entry in the
+file has this same two-part shape:
+
+```yaml
+- name: namespace
+  base:                       # PART 1 — the template: ordinary K8s YAML...
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: placeholder       #   ...with a BLANK where the name goes
+  patches:                    # PART 2 — the fill-in rules
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.slug     # look in the user's WebApp, at spec.slug
+      toFieldPath: metadata.name   # copy it into the blank above
+```
+
+Read it as a sentence: *"when someone creates a WebApp, make a Namespace —
+named after whatever they put in `spec.slug`."*
+
+- **`base`** is plain Kubernetes YAML — except it has a `placeholder`
+  where real values will go.
+- **`patches`** wires user input into the blanks. One rule says exactly
+  three things: copy-from-the-WebApp (`FromCompositeFieldPath`), *from*
+  `spec.slug`, *to* `metadata.name`.
+
+The other three entries are the same shape with more blanks, so more rules:
+the Deployment copies `spec.slug` → namespace, `spec.replicas` → replicas,
+`spec.image` → image (the Service and ConfigMap each copy `spec.slug`).
+
+### Watch a render happen, by hand (do this on camera)
+
+```
+the user's WebApp:              the rule:                    the output:
+  spec:                          from: spec.slug
+    slug: payments-team          to:   metadata.name          apiVersion: v1
+                                 (copy into the base)        kind: Namespace
+                                                             metadata:
+                                                               name: payments-team
+```
+
+`slug: payments-team` in → a complete Namespace out. **User input + template
++ patch rules = real resources.** And the composition didn't create it —
+it produced the *YAML* for it.
+
+### The full render sequence (fired whenever a WebApp is created)
+
+```
+Step 0  WebApp lands in etcd; composition controller starts a render
+Step 1  patch-and-transform applies templates+patches to the WebApp
+        -> RETURNS 4 filled-in resources ("paperwork")
+Step 2  auto-ready defines the done-rule (all healthy -> WebApp Ready)
+Step 3  controller DIFFS rendered vs cluster: create/update/delete
+        -> status flows back up into the WebApp's conditions
+```
+
+Template, blanks, patch rules, render, diff, create — the whole machine.
 
 ### Why functions at all (the v2 story)
 
-v1 baked patch-and-transform logic into Crossplane core — one dialect, fixed
-forever. v2 made it a **package interface**: swap in `function-go-templating`
+v1 baked patch-and-transform into Crossplane core — one dialect, fixed
+forever. v2 made it a package interface: swap in `function-go-templating`
 (Helm-style templates), `function-kcl`, or write your own in Go/Python — a
-container implementing "resources in, resources out." Your platform's
-intelligence is a pluggable, versioned component; Crossplane stays the boring
-engine.
+container implementing "resources in, resources out." Platform intelligence
+is a pluggable, versioned component; Crossplane stays the boring engine.
 
-### How a WebApp finds its composition (everyone asks)
+### How a WebApp finds its composition
 
 | Mechanism | Field | Use when |
 |---|---|---|
@@ -886,7 +938,7 @@ engine.
 | By label | `spec.compositionSelector` | flavors ("small", "ha") |
 | Default | `defaultCompositionRef` (on the XRD) | the normal path |
 
-Same pattern Kubernetes uses everywhere: default, select, or specify.
+Default, select, or specify — the Kubernetes pattern.
 
 ### Install + apply, then the killer feature
 
@@ -903,7 +955,7 @@ kubectl get composition webapp-standard
 
 ```bash
 crossplane beta render episodes/01-getting-started/manifests/04-webapp.yaml                             episodes/01-getting-started/manifests/03-composition.yaml
-# all 4 composed resources, printed. No cluster involved.
+# all 4 composed resources, blanks filled — printed, no cluster involved
 ```
 
 Purity is why this works: the CLI runs the same function containers locally,
