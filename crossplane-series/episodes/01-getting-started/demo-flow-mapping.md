@@ -16,7 +16,10 @@ Narration phase → the command that proves it (all in lab-guide.md; demo.sh run
 | 8 | Level-triggered: 3 attacks, 3 correct responses | delete → heal; `kubectl patch cm` → revert; `kubectl delete object` → cascade |
 | 8 | deletionPolicy: Delete vs Orphan (adopting infra) | `deletionPolicy: Orphan` heredoc → `kubectl delete object` → CM survives (lab-guide §13) |
 | 9 | You are an API author; Kubernetes learns a new word | `kubectl apply -f manifests/02-xrd.yaml`; `kubectl get crd webapps...`; `kubectl explain webapp` |
-| 10 | Functions RENDER, controllers CREATE | `manifests/03-composition.yaml` (pipeline); `kubectl get functions` |
+| 9 | Schema = admission-time enforcement for free | apply `replicas: "banana"` → rejected instantly (lab-guide §14) |
+| 9 | API without implementation — inert WebApp | apply a valid WebApp → nothing happens (delete before §16) |
+| 10 | A composition is a pure function: WebApp in, resources out | render-flow diagram (lab-guide §15); one `FromCompositeFieldPath` patch rule on screen |
+| 10 | Functions render paperwork; the controller diffs and creates | `manifests/03-composition.yaml` (pipeline); `kubectl get functions` |
 | 10 | Offline render = unit-testing your platform | `crossplane render manifests/04-webapp.yaml manifests/03-composition.yaml ../../lab/providers/40-functions.yaml` |
 | 11 | 7 lines → whole environment | `kubectl apply -f manifests/00-team-namespace.yaml manifests/04-webapp.yaml`; `kubectl -n payments-team get all,cm` |
 | 11 | Trace = incident response for infra | `crossplane beta trace webapp/payments -n payments-team` |

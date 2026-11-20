@@ -1,6 +1,6 @@
 # Episode 1 — Storyboard: Crossplane Getting Started
 
-**Target length:** ~46 min (long is fine — this is the reference/getting-started episode). **Hook style:** show-the-miracle-first, then build the understanding, like under-the-hood Ep 1.
+**Target length:** ~48 min (long is fine — this is the reference/getting-started episode). **Hook style:** show-the-miracle-first, then build the understanding, like under-the-hood Ep 1.
 
 > Narration is verbatim in `narration.md` (12 phases, timestamped). This file is the production map.
 > **Phases 5–7 are the conceptual core** — providers, identity, managed resources — paced slowly on purpose (~10 min combined). Every later episode stands on them; give them the best takes.
@@ -17,10 +17,10 @@
 | 6 | **ProviderConfig — identity, all the way to the cloud** | 14:00–19:00 | SA-token mechanics diagram; InjectedIdentity file; Secret vs Workload Identity (IRSA/OIDC) comparison; the indirection diagram | How pods authenticate at all (token in, authority out). Then the cloud bridge: static Secret vs OIDC federation — no long-lived keys. Separation of powers, multiple configs, central rotation, why `default` |
 | 7 | **Managed resources — the atom** | 19:00–25:00 | Field-by-field YAML walk; READY/SYNCED -w; annotations on the real object | forProvider = remote API's own YAML embedded. "Synced = messenger, Ready = package." Spec down/status up. **The flip: the MR is the truth, the object is the shadow** |
 | 8 | Drift fight | 25:00–29:30 | 3 attacks: delete → heal; edit → revert; delete MR → cascade | The centerpiece. Timer overlay. deletionPolicy teaser |
-| 9 | XRD | 29:30–32:30 | XRD YAML; kubectl explain | "Kubernetes learned a new word." API vs modules |
-| 10 | Composition + functions | 32:30–37:00 | Pipeline YAML; offline `crossplane render` | Functions render, controllers create. Offline render = unit-testing the platform |
-| 11 | WebApp payoff | 37:00–42:00 | 7-line YAML → environment; trace tree; patch replicas 2→4; curl; delete → clean | Update = chain of control loops. Trace = incident response |
-| 12 | Verdict: vs Terraform | 42:00–46:00 | Comparison table; litmus test | Both columns honestly; "who notices a 2am change?"; Terraform built this lab |
+| 9 | XRDs — publish your own kind | 29:30–33:00 | Group/kind/schema framing; XRD YAML; kubectl explain; **live validation reject** (`replicas: "banana"`); the inert-WebApp pause | "You join the API committee." Schema = admission-time enforcement for free. Published word, no meaning yet |
+| 10 | **Compositions — a pure function for your platform** | 33:00–38:30 | Render-flow diagram; one patch rule; function install; offline render | "WebApp in, resources out — same every time." Functions return paperwork; the controller diffs and creates. v2: pluggable functions. compositionRef/selector/default. Render in CI = unit-testing the platform |
+| 11 | WebApp payoff | 38:30–43:30 | 7-line YAML → environment; trace tree; patch replicas 2→4; curl; delete → clean | Update = chain of control loops. Trace = incident response |
+| 12 | Verdict: vs Terraform | 43:30–47:30 | Comparison table; litmus test | Both columns honestly; "who notices a 2am change?"; Terraform built this lab |
 
 ## Assets to prepare
 

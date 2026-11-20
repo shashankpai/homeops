@@ -108,6 +108,24 @@ kubectl apply -f "$EP_DIR/manifests/02-xrd.yaml"
 echo ""
 echo "Crossplane just created a brand-new Kubernetes kind:"
 kubectl get crd webapps.demo.crossplane.io
+kubectl explain webapp --api-version=demo.crossplane.io/v1alpha1 | head -20
+pause "Schema = enforcement for free. Watch bad YAML die at admission:"
+kubectl apply -f - <<'EOF'
+apiVersion: demo.crossplane.io/v1alpha1
+kind: WebApp
+metadata: {name: broken, namespace: default}
+spec:
+  replicas: "banana"
+EOF
+echo "(rejected — no webhook, no code; the XRD's OpenAPI schema did that)"
+pause "And the inert pause: a VALID WebApp right now would sit there, unhandled —"
+echo "an API without an implementation. The Composition gives it meaning:"
+kubectl apply -f - <<'EOF' >/dev/null && kubectl delete webapp inert -n default --ignore-not-found
+apiVersion: demo.crossplane.io/v1alpha1
+kind: WebApp
+metadata: {name: inert, namespace: default}
+spec: {slug: inert}
+EOF
 pause "Show the Composition that defines what a WebApp means:"
 kubectl apply -f "$EP_DIR/manifests/03-composition.yaml"
 kubectl get composition webapp-standard

@@ -25,11 +25,11 @@ Everything in the video is in the repo: install scripts, runnable lab guide with
 14:00 ProviderConfig: identity all the way to the cloud (tokens, secrets, Workload Identity)
 19:00 Managed resources: the atom of Crossplane (full anatomy)
 25:00 The drift fight: three attacks, three correct responses
-29:30 XRDs: publish your own Kubernetes API
-32:30 Compositions & functions (and offline render in CI)
-37:00 The payoff: 9 lines of YAML → a whole environment
-42:00 The honest verdict: Crossplane vs Terraform
-45:40 What's next
+29:30 XRDs: publish your own kind (validation for free)
+33:00 Compositions: a pure function for your platform (and offline render in CI)
+38:30 The payoff: 9 lines of YAML → a whole environment
+43:30 The honest verdict: Crossplane vs Terraform
+47:10 What's next
 
 🔗 Repo: github.com/shashankpai/homeops → crossplane-series
 🖥 Lab: same 3-node K3s cluster as the "K8s Under the Hood" series
@@ -48,4 +48,4 @@ crossplane, crossplane tutorial, crossplane v2, crossplane getting started, cros
 
 - Pin comment: link to the k8s-shorts control-loop Short — the "control plane model" phase leans on it.
 - Phase 12 (vs Terraform) and the cold open are the two cuttable Shorts.
-- Duration ~46 min is intentional: this is the series reference episode. Chapter timestamps are mandatory for retention.
+- Duration ~48 min is intentional: this is the series reference episode. Chapter timestamps are mandatory for retention.

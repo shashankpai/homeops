@@ -425,15 +425,19 @@ Hold on though — "Crossplane deletes my infrastructure when I delete a YAML ob
 
 ---
 
-## Phase 9 — XRDs: Publish Your Own Kind (29:30 – 32:30)
+## Phase 9 — XRDs: Publish Your Own Kind (29:30 – 33:00)
 
 [29:30]
 
-Everything so far: Crossplane managing things, one object at a time. It's neat, but honestly Terraform does that too. *This* is the segment Terraform cannot follow.
+Everything so far: Crossplane managing things, one object at a time. It's neat — but honestly, Terraform does that too. This is the segment Terraform cannot follow. We're going to *publish an API*.
 
-[29:45]
+[29:45 — what an API really is]
 
-Watch this file. It's a CompositeResourceDefinition — an XRD:
+Let's be precise about what that means, because "API" gets used loosely. A Kubernetes API is really just three things: a **group** — the namespace of names, like `apps` or `batch`; a **kind** — the noun, like Deployment or CronJob; and a **schema** — what fields exist, what types they are, what's required, what defaults apply. That's it. Group, kind, schema. And every one you use daily — Deployments, Services, Jobs — is somebody's published opinion about how a problem should be modeled.
+
+[30:10 — the XRD]
+
+So here's our opinion, as a platform team. It's called a CompositeResourceDefinition — an XRD:
 
 ```yaml
 apiVersion: apiextensions.crossplane.io/v2
@@ -446,16 +450,20 @@ spec:
   scope: Namespaced
   versions:
     - name: v1alpha1
+      served: true
+      referenceable: true
       schema:
         openAPIV3Schema:
-          spec: {slug, replicas, image}
+          spec:
+            properties:
+              slug:      {type: string}        # required — becomes the namespace
+              replicas:  {type: integer, default: 2}
+              image:     {type: string}        # optional — Composition fills a default
 ```
 
-[30:20]
+Read it like the committee member you now are. `group: demo.crossplane.io` — *our* API group, sitting in the API catalog next to `apps` and `batch`. `kind: WebApp` — the noun we're contributing. `scope: Namespaced` — WebApps live in namespaces, so teams can own them, RBAC can scope them, quotas can limit them — a v2 feature, and honestly one of its best ones. And `versions` — our contract, starting at v1alpha1, marked `referenceable` — meaning "this is the version compositions should target for now" — because APIs, like software, need to grow up in public: alpha today, beta, then v1, without breaking consumers. We just made all of those promises, in four lines.
 
-Read what this is: I am defining an API group — `demo.crossplane.io`, my group, next to `apps` and `batch` — with a kind called WebApp, namespaced so teams can own and RBAC-scope them, with a schema: required `slug`, optional `replicas` defaulting to 2, optional `image`. Plain OpenAPI, exactly like any CRD you've written.
-
-[30:50 — terminal]
+[31:30 — apply it, and prove the schema works]
 
 ```bash
 kubectl apply -f episodes/01-getting-started/manifests/02-xrd.yaml
@@ -463,23 +471,44 @@ kubectl get crd webapps.demo.crossplane.io
 kubectl explain webapp
 ```
 
-Kubernetes just learned a new word. `kubectl explain` teaches it back to me. If I create a WebApp right now, it gets stored... and then sits there forever, because nothing *handles* it yet. There's no controller for "webapp". Interesting state, isn't it? The API exists; the meaning doesn't. Let's give it meaning.
+Kubernetes just learned a new word — `kubectl explain` teaches it back, from the schema we authored. But I want to show you the part people never demo, and it's my favorite thing about defining APIs this way. The schema isn't documentation — it's *enforcement*, at admission:
 
-[31:50]
+```bash
+kubectl apply -f - <<EOF
+apiVersion: demo.crossplane.io/v1alpha1
+kind: WebApp
+metadata: {name: broken}
+spec:
+  replicas: "banana"
+EOF
+# error: spec.replicas in body must be of type integer: "banana"
+```
 
-Meaning in Crossplane comes from a Composition. And the reason I slowed down on the XRD is this contrast: with Terraform, if I wrap complexity in a module — the consumer still reads and writes Terraform. Here, the consumer *only ever sees the API*. `kind: WebApp`, three fields, full stop. The complexity lives behind it, in the composition — and that's what a platform *is*. An API with opinions behind it.
+Rejected. Instantly. Before anything runs, before any controller sees it, before any resource gets created. Bad YAML dies at the front door, and *the only thing I shipped to get that* was a schema — no validation webhook, no admission controller, no code. When your platform API is the front door for forty teams, that's not a nicety. That's the difference between "please read the docs" and "the API won't let you be wrong."
+
+[32:20 — the pregnant pause]
+
+And now, the moment I love most in this whole episode. Create a *valid* WebApp right now. What happens?
+
+...Nothing. It sits there. Stored, validated, watched — and completely inert. Because the XRD gave us a word, and nobody has defined what the word *means* yet. An API without an implementation. In Kubernetes, meaning comes from controllers — and we haven't given WebApp one. This separation — the API, published and enforced, and the implementation, swappable behind it — is *the* platform-engineering pattern. Consumers learn the word once; the platform can change everything behind it, forever.
+
+[32:45]
+
+Hold that thought — "published word, no meaning" — because giving it meaning is exactly the next phase. And it's the deepest one.
 
 ---
 
-## Phase 10 — Compositions and Functions (32:30 – 37:00)
+## Phase 10 — Compositions: A Pure Function for Your Platform (33:00 – 38:30)
 
-[32:30]
+[33:00]
 
-The composition is the recipe: when someone creates a WebApp, here's everything they get and how it's built. Ours composes three resources: a deployment, a service, and a configmap — a tiny compliant environment for a team's web app, inside the team's own namespace. Why no Namespace resource? Because a namespaced WebApp can only compose things *in its own namespace*; the namespace is something the platform team creates once per team.
+A composition is the meaning. And I want to teach it to you the way I wish someone had taught me — not as a pile of YAML, but as one sentence:
 
-[32:50]
+> **A composition is a pure function: WebApp in, list of resources out.**
 
-But first — v2 changed how compositions work, and it's a change for the better. In v1, a composition had built-in patching logic and you'd have these enormous YAML files full of patch rules. In v2, a composition is a **pipeline of functions**. Look at the shape:
+A WebApp goes in. A namespace, a deployment, a service, and a configmap come out. Same input, same output, every time. The composition never talks to the cluster, never creates anything itself, never keeps state. It's a recipe — and in Crossplane v2, recipes are **pipelines of functions**. Let me show you the whole machine, slowly, because it's the deepest concept in this episode — and once you see it, everything else about Crossplane clicks into place.
+
+[33:40 — the pipeline]
 
 ```yaml
 mode: Pipeline
@@ -487,49 +516,61 @@ pipeline:
   - step: patch-and-transform
     functionRef: {name: function-patch-and-transform}
     input:
-      resources: [deployment, service, configmap...]
+      resources: [...]        # 4 templates + patch rules — the recipe body
   - step: automatically-mark-ready
     functionRef: {name: function-auto-ready}
 ```
 
-[33:30]
+Two steps, two functions, in order. Now watch what actually happens when a WebApp is created — follow the data:
 
-And here's the mental model everyone misses, so let me be really precise. Functions do not create anything. When a WebApp appears, the composition controller starts a **render**: it takes the WebApp — what the user asked for — and passes it into function one. Function one is `patch-and-transform`, a container that takes templates plus patches and returns a list of *desired* resources: "here's the deployment, replicas from spec.replicas, image from spec.image or the default; here's the service; here's the configmap." It returns *paperwork*. It also returns readiness checks — the deployment counts as ready when it's Available; the service and configmap are ready on creation. Then function two, `auto-ready`, looks at the rendered resources and decides when the WebApp can be called Ready. Those readiness checks matter: plain Kubernetes objects don't report a Ready condition, and without them the WebApp would sit at 'unready' forever. Then — and only then — the composition controller actually creates and updates those resources and streams their status back into the WebApp. Functions render. Controllers create.
+[34:00 — the render, function by function]
 
-[34:40]
+**Step zero.** A WebApp appears in etcd. The composition controller notices, and starts a **render**: it gathers the WebApp — what the user asked for — into a packet, and calls function one.
 
-Why is this good? Because the pipeline is pluggable. Don't like patch-and-transform's YAML? Swap in `function-go-templating` and write Helm-style templates. Or KCL. Or write your own function in Python or Go — it's just a container. That's a whole season of this series, and it starts from this exact lab.
+**Step one: `patch-and-transform`.** This function holds our four templates — the skeleton of a namespace, a deployment, a service, a configmap — and the patch rules that wire user input into them. Look at one rule, because one rule explains all of them:
 
-[35:10 — terminal]
+```yaml
+- type: FromCompositeFieldPath
+  fromFieldPath: spec.slug      # from the user's WebApp...
+  toFieldPath: metadata.name    # ...into the namespace template's name
+```
+
+`spec.slug` in, namespace name out. `spec.replicas` → deployment replicas. `spec.image` → container image, or the default if the user didn't say. The function runs all of it and **returns a list of desired resources** — four objects, fully filled in. And here's the sentence I need you to keep: **functions return paperwork.** They don't create the namespace. They don't touch the cluster. They return: "here is what should exist." That's why the function is called a *render* function, and this whole phase is called rendering.
+
+**Step two: `function-auto-ready`.** The controller hands the rendered resources to the next function in the pipeline. This one answers a different question: "when is the WebApp *done*?" Its job is to look at what was rendered and define the readiness rule — all resources healthy → mark the WebApp Ready. Without it, you'd hand-write readiness logic per composition; with it, one reusable step. Pipelines compose like this: *each function does one job, takes the output of the last.*
+
+**Step three: the controller acts.** Only now does anything real happen. The composition controller takes the rendered list and **diffs it against the cluster**: resources that don't exist get created; ones that exist but changed get updated; ones that disappeared from the render get deleted. It's the same reconcile pattern you've seen all episode — desired versus actual — now applied to the composed set. And it streams status back: each composed resource's health flows up into the WebApp's conditions, which is how one object summarizes a whole environment.
+
+[36:00 — the question everyone asks]
+
+"Wait — if the functions don't touch the cluster... then what *are* they?" They're containers, run by the controller, one render call at a time. And that design choice — *keep the intelligence in replaceable containers, keep Crossplane as the boring engine* — is v2's big move. In v1, the patch-and-transform logic was *baked into Crossplane core*: one dialect, fixed forever, and when your composition outgrew it, you were stuck. v2 turned it into a package interface. Don't like patch rules? Swap in `function-go-templating` — write your composition as Helm-style templates. Or KCL. Or write your own in Go or Python — a container implementing "resources in, resources out." Your platform's intelligence is now a *pluggable component*, versioned and replaceable, without touching Crossplane itself.
+
+[36:45 — how a WebApp finds its composition]
+
+Quick but important, because everyone hits it: when a WebApp is created, how does the system know *which* recipe to use? Three ways: the WebApp names one explicitly — `spec.compositionRef`; or it selects by label — `compositionSelector`; or — our case — the XRD declares a `defaultCompositionRef`, and WebApps get it automatically. Explicit for special cases, labeled for flavors ("small", "ha"), default for the normal path. The same pattern Kubernetes uses everywhere: default, select, or specify.
+
+[37:10 — the payoff of purity]
+
+Now the payoff of that one sentence — *pure function* — and it's enormous: **if the composition is a pure function, you can run it without a cluster.** Watch:
 
 ```bash
-kubectl apply -f lab/providers/40-functions.yaml
-kubectl get functions -w      # INSTALLED/HEALTHY — same package flow as the provider
+kubectl apply -f lab/providers/40-functions.yaml     # functions are packages, like the provider
 kubectl apply -f episodes/01-getting-started/manifests/03-composition.yaml
+
+crossplane beta render manifests/04-webapp.yaml manifests/03-composition.yaml
 ```
 
-Same install story — functions are packages too, pulled as OCI images, installed by the same package manager. Consistency is a feature.
+All four resources — namespace, deployment, service, configmap — printed to your terminal, exactly as they'd be created. No cluster involved: the CLI runs the same function containers locally, feeds them the same WebApp, and shows you the output. This is `terraform plan` for your platform API — except it's *pure*: no state file to compare against, just the function, doing what functions do.
 
-[35:50 — the killer feature]
+And think about what that means for a platform team: put `crossplane render` in CI. Every pull request on your platform definition — your XRD, your composition — gets rendered with a sample WebApp, and the output diffed. You can *unit-test your platform*, in a pipeline, with zero infrastructure. That is a sentence Terraform cannot say.
 
-Now let me show you something Terraform genuinely cannot do. I can render this composition *completely offline*:
+[38:15]
 
-```bash
-crossplane render episodes/01-getting-started/manifests/04-webapp.yaml \
-  episodes/01-getting-started/manifests/03-composition.yaml lab/providers/40-functions.yaml
-```
+So — full circle from the pregnant pause a minute ago: the XRD published the word; the composition defines the meaning; functions render; controllers create. One machine, fully understood. Let's go use it — and see what nine lines of YAML can do.
 
-All three resources, printed, exactly as they'd be created — and no cluster was involved. Functions are containers; the render runs them locally. This is `terraform plan` — pure, offline, no state file — and you can run it in CI on every PR to your platform definition. You can *unit-test your platform*.
+## Phase 11 — The Payoff: A WebApp (38:30 – 43:30)
 
-[36:50]
-
-XRD defines the API. Composition gives it meaning. Now let's use it.
-
----
-
-## Phase 11 — The Payoff: A WebApp (37:00 – 42:00)
-
-[37:00 — the whole file on screen; let it breathe]
+[38:30 — the whole file on screen; let it breathe]
 
 This is everything a developer writes — into the team's namespace, which the platform team created once:
 
@@ -544,7 +585,7 @@ spec:
 
 Seven lines. No deployment YAML, no service YAML, no configmap YAML, no copying the "standard deployment" from the last team's repo. They ask for an app; the platform does the rest.
 
-[37:40 — terminal]
+[39:10 — terminal]
 
 ```bash
 kubectl apply -f episodes/01-getting-started/manifests/00-team-namespace.yaml
@@ -554,7 +595,7 @@ kubectl -n payments-team get webapp payments -w
 
 Watch the status go Ready — that's auto-ready doing its job, checking all three composed resources. And:
 
-[38:10]
+[39:40]
 
 ```bash
 kubectl -n payments-team get all,cm
@@ -562,7 +603,7 @@ kubectl -n payments-team get all,cm
 
 There it is. The deployment — podinfo, running, two replicas — the service, the configmap. One resource in, an environment out. And the status flowed back the other way: the WebApp's conditions summarize everything composed beneath it. You can build dashboards off *that*.
 
-[38:50 — the tree]
+[40:20 — the tree]
 
 Now the tool that will follow you around forever:
 
@@ -580,7 +621,7 @@ WebApp/payments (payments-team)              True     True    Available
 
 The full dependency tree, live. When something's wrong, you don't guess — you trace, you find which composed resource is unhappy, you look at *its* events. Incident response for infrastructure, the kubectl way.
 
-[39:30 — updates: the chain of loops]
+[41:00 — updates: the chain of loops]
 
 Now updates — this is where it gets philosophically beautiful. Watch what happens when I change the spec:
 
@@ -591,16 +632,16 @@ watch kubectl -n payments-team get deployment webapp
 
 Four replicas. But think about the chain that just fired: I patched the WebApp — the composition controller re-renders — patch-and-transform copies spec.replicas into the deployment template — the controller updates the composed Deployment — and the *plain Kubernetes* Deployment controller does the rolling update. A chain of control loops, each doing one job, composing into platform behavior. Nobody restarted anything. No pipeline ran. `kubectl patch` to scale an environment.
 
-[40:50 — prove it works]
+[42:20 — prove it works]
 
 And it's real infrastructure, so let's use it:
 
 ```bash
-kubectl -n payments-team port-forward service/webapp 98101:3898 &
+kubectl -n payments-team port-forward service/webapp 9813:0898 &
 curl localhost:9898/
 ```
 
-[41:20 — delete]
+[42:50 — delete]
 
 And the final power move — cleanup:
 
@@ -613,9 +654,9 @@ Delete the WebApp on the API, the platform deletes everything it composed. Seven
 
 ---
 
-## Phase 12 — The Honest Verdict: Crossplane vs Terraform (42:00 – 46:00)
+## Phase 12 — The Honest Verdict: Crossplane vs Terraform (43:30 – 47:30)
 
-[42:00 — table on screen]
+[43:30 — table on screen]
 
 Time to pay off the promise from the intro. The full, honest comparison.
 
@@ -629,11 +670,11 @@ Time to pay off the promise from the intro. The full, honest comparison.
 
 **Updates and day-2.** Re-run the pipeline, versus... patch the resource. And GitOps fits for free: Argo CD syncing Crossplane resources is just Argo CD doing what it already does.
 
-[43:40 — and now the case FOR Terraform]
+[45:10 — and now the case FOR Terraform]
 
 But this table has two columns, and I promised honesty. Terraform is fifteen years old, with providers for nearly everything on Earth. Crossplane's provider ecosystem is younger, and cloud coverage is real but patchier. If your infra is a one-shot, brownfield, or your org already breathes HCL — Terraform is the *correct* answer, and v2 churn means old Crossplane tutorials will actively mislead you today. It's a younger technology and you should price that in.
 
-[44:30 — the litmus test]
+[46:00 — the litmus test]
 
 So here's the litmus test I use. Ask: *"Who notices when someone changes infrastructure by hand at 2am?"* If the answer is "the next time a human runs a pipeline" — you have a pipeline, and you should know that's what you have. If the answer is "a controller, within a minute" — you have a control plane.
 
@@ -641,6 +682,6 @@ So here's the litmus test I use. Ask: *"Who notices when someone changes infrast
 - Infra as a product for many teams, kubectl-and-GitOps as the interface, drift matters → **Crossplane**.
 - And in practice: both. Terraform builds the cluster. Crossplane runs inside it. This lab? Terraform built these very VMs, and Crossplane just ran on top of them. No irony wasted.
 
-[45:40 — wrap]
+[47:10 — wrap]
 
 Everything you saw today is in the repo: the install, the provider, the XRD, the composition, every command from this episode in a runnable lab guide — go break it, that's what it's for. Next episode: compositions in depth — real functions, dependencies between resources, versioning your platform API like a product. Subscribe, and I'll see you in the control plane.

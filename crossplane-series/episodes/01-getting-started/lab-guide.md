@@ -761,109 +761,154 @@ kubectl -n demo-team-a delete configmap welcome # clean up by hand
 
 ## 14. Publish Your Own API — the XRD
 
-So far: Crossplane managing things one object at a time. Now the platform-
-engineering move: **define a new API**.
+### The concept first
 
-**Make:** `make demo-ep01-step STEP=3` (applies the XRD *and* the Composition — §14 + §15).  **Manual:**
+A Kubernetes API is three things: **group** (the namespace of names — `apps`,
+`batch`), **kind** (the noun — Deployment, CronJob), and **schema** (fields,
+types, defaults, requirements). Every API you use daily is somebody's
+published opinion. An XRD is *yours* — you join the "committee": `demo.crossplane.io`
+sits in the catalog next to `apps` and `batch`.
+
+Guided: covered by `make demo-ep01` step 3. Manual:
 
 ```bash
 kubectl apply -f episodes/01-getting-started/manifests/02-xrd.yaml
 kubectl get crd webapps.demo.crossplane.io
 kubectl explain webapp --api-version=demo.crossplane.io/v1alpha1
-# SPEC.SLUG, SPEC.REPLICAS, SPEC.IMAGE — the schema we authored
 ```
 
-Read the XRD on camera; the teaching points:
+### The teaching beats (in order)
 
-- `group: demo.crossplane.io` — your own API group, like `apps` or `batch`.
-  You are now a first-class API author, same as the Kubernetes steering committee.
-- `names.kind: WebApp` — consumers write `kind: WebApp`.
-- `scope: Namespaced` — **a v2 feature**: XRs live in namespaces, so teams
-  can own, RBAC-scope, and quota them. A namespaced XR can only compose
-  resources **in its own namespace** (no cluster-scoped kinds like
-  `Namespace`) — that's why the team namespace is created separately in
-  Section 16. (v1 XRs were cluster-scoped with "claims" in front —
-  Appendix A.)
-- `versions[].schema` — plain OpenAPI, exactly like any CRD. `slug` is
-  required; `replicas` defaults to 2; `image` is optional (the Composition
-  fills a default).
+1. **`group: demo.crossplane.io`** — your own API group. You are an API author now.
+2. **`scope: Namespaced`** — a v2 feature: XRs live in namespaces, so teams can
+   own, RBAC-scope, and quota them.
+3. **`versions` + `referenceable: true`** — your contract. v1alpha1 today,
+   beta and v1 later, without breaking consumers. APIs grow up in public.
+4. **`kubectl explain webapp`** — the schema you authored is now *documentation*,
+   generated. Consumers discover the API the same way they discover everything else.
 
-**The core Crossplane controller generated a real CRD from this** — show it:
+### Validation for free (the beat people never demo — do it live)
+
+The schema isn't documentation — it's **enforcement, at admission**:
 
 ```bash
-kubectl get crd webapps.demo.crossplane.io -o yaml | head -40
+kubectl apply -f - <<EOF
+apiVersion: demo.crossplane.io/v1alpha1
+kind: WebApp
+metadata: {name: broken}
+spec:
+  replicas: "banana"
+EOF
+# error: spec.replicas in body must be of type integer: "banana"
 ```
 
-> **On camera:** "Kubernetes just learned a new word. Nobody wrote a
-> controller for WebApp yet — creating one right now would just sit there.
-> That's the next piece."
+Rejected instantly — before any controller runs, before anything is created.
+No validation webhook, no admission controller, no code. For a platform with
+forty teams creating WebApps, that's the difference between "please read
+the docs" and "the API won't let you be wrong."
 
-## 15. The Composition — a Recipe Made of Functions
-
-**Make:** `make xp-functions` (functions), then `make demo-ep01-step STEP=3` (XRD + Composition).  **Manual:**
+### The pregnant pause (do this on camera)
 
 ```bash
-kubectl apply -f episodes/01-getting-started/manifests/03-composition.yaml
-
-# The functions it uses are packages (same mechanism as §9). `make
-# crossplane-install` already applied these; the apply is idempotent:
-kubectl apply -f lab/providers/40-functions.yaml
-kubectl get functions -w
-# function-patch-and-transform   INSTALLED/HEALTHY
-# function-auto-ready            INSTALLED/HEALTHY
+kubectl apply -f - <<EOF
+apiVersion: demo.crossplane.io/v1alpha1
+kind: WebApp
+metadata: {name: inert, namespace: default}
+spec: {slug: inert}
+EOF
+# accepted... and nothing happens. No meaning yet.
 ```
 
-Anatomy of `webapp-standard` — walk it top to bottom on camera:
+Stored, validated, watched — and completely inert. The XRD published a word;
+nothing defines what the word *means* yet. That separation — published API in
+front, swappable implementation behind — is the core platform pattern.
+(Delete `webapp/inert` before moving on.)
+
+## 15. The Composition — a Pure Function for Your Platform
+
+### The one-sentence mental model
+
+> **A composition is a pure function: WebApp in, list of resources out.**
+
+Same input → same output, every time. It never talks to the cluster, never
+creates anything, never keeps state. In v2, compositions are **pipelines of
+functions**, and the pipeline is: *functions render, controllers create.*
+
+### The render, step by step (narrate this slowly)
+
+```
+WebApp created in etcd
+        │
+        ▼
+composition controller starts a render
+        │
+        ▼
+┌─ function 1: patch-and-transform ─────────────────────┐
+│  templates (namespace/deploy/service/cm) + patch     │
+│  rules (spec.slug -> ns name, spec.replicas -> ...)   │
+│  RETURNS: 4 desired resources ("paperwork")           │
+└───────────────────────┬───────────────────────────────┘
+                        ▼
+┌─ function 2: auto-ready ─────────────────────────────┐
+│  defines WHEN the XR counts as Ready                  │
+└───────────────────────┬───────────────────────────────┘
+                        ▼
+composition controller DIFFS against the cluster:
+  missing → create · changed → update · removed → delete
+  status flows back up into the WebApp's conditions
+```
+
+One patch rule explains all of them — show this on screen:
 
 ```yaml
-spec:
-  compositeTypeRef: {apiVersion: demo.crossplane.io/v1alpha1, kind: WebApp}
-  mode: Pipeline           # v2: compositions ARE pipelines
-  pipeline:
-    - step: patch-and-transform
-      functionRef: {name: function-patch-and-transform}
-      input:               # everything this function needs, inline
-        resources:         # 3 templates: deployment, service, configmap
-          ...patches: FromCompositeFieldPath (spec.replicas -> spec.replicas, ...)
-          ...readinessChecks: Deployment -> MatchCondition Available; Service/ConfigMap -> None
-    - step: automatically-mark-ready
-      functionRef: {name: function-auto-ready}
+- type: FromCompositeFieldPath
+  fromFieldPath: spec.slug      # from the user's WebApp...
+  toFieldPath: metadata.name    # ...into the namespace template's name
 ```
 
-**How a pipeline runs** (this is the part every beginner misses — go slow):
+**Functions return paperwork.** They don't create anything — that's why the
+output is called a *render*, and why the whole thing is testable.
 
-1. A WebApp is created → the composition controller starts a **render**
-2. The observed composite + connection details go **into** function 1
-3. `patch-and-transform` returns a list of *desired composed resources*
-   (it doesn't create anything!): deployment + service + configmap,
-   with fields patched in from `spec.slug`, `spec.replicas`, `spec.image`
-4. Function 2 (`auto-ready`) looks at everything and decides when the XR
-   can be marked `Ready`. It only trusts a `Ready` condition or a
-   `readinessChecks` result from step 1 — plain Kubernetes objects have
-   neither by default, so the Composition declares `readinessChecks`
-   itself. Without them the WebApp sits at `Unready resources: config,
-   deployment, and service` forever.
-5. The controller takes the rendered resources and creates/updates them —
-   as plain Kubernetes objects in the WebApp's namespace (Deployment/Service/
-   ConfigMap — no provider needed) — and updates their status back into the WebApp
+### Why functions at all (the v2 story)
 
-**Offline rendering — the killer debugging feature** (use it live):
+v1 baked patch-and-transform logic into Crossplane core — one dialect, fixed
+forever. v2 made it a **package interface**: swap in `function-go-templating`
+(Helm-style templates), `function-kcl`, or write your own in Go/Python — a
+container implementing "resources in, resources out." Your platform's
+intelligence is a pluggable, versioned component; Crossplane stays the boring
+engine.
+
+### How a WebApp finds its composition (everyone asks)
+
+| Mechanism | Field | Use when |
+|---|---|---|
+| Explicit | `spec.compositionRef` (on the WebApp) | one-off override |
+| By label | `spec.compositionSelector` | flavors ("small", "ha") |
+| Default | `defaultCompositionRef` (on the XRD) | the normal path |
+
+Same pattern Kubernetes uses everywhere: default, select, or specify.
+
+### Install + apply, then the killer feature
 
 ```bash
-crossplane render episodes/01-getting-started/manifests/04-webapp.yaml \
-                  episodes/01-getting-started/manifests/03-composition.yaml \
-                  lab/providers/40-functions.yaml
-# prints all 3 composed resources — no cluster required (needs Docker to run the functions)
+# functions are packages — same install story as the provider (§9):
+kubectl apply -f lab/providers/40-functions.yaml
+kubectl get functions -w        # INSTALLED/HEALTHY, same conditions
+
+kubectl apply -f episodes/01-getting-started/manifests/03-composition.yaml
+kubectl get composition webapp-standard
 ```
 
-> **On camera:** "This is `terraform plan` for compositions — except it's
-> pure and offline: functions are containers, render runs them locally.
-> You can unit-test your platform API in CI with no cluster at all."
+**Offline render — `terraform plan`, minus the state file:**
 
-**Why functions at all?** In v1, compositions had hardcoded patch-and-
-transform logic. In v2 the pipeline is pluggable: `function-go-templating`
-(write Helm-style templates), `function-kcl`, or your own container in
-Go/Python. Season 2 lives here.
+```bash
+crossplane beta render episodes/01-getting-started/manifests/04-webapp.yaml                             episodes/01-getting-started/manifests/03-composition.yaml
+# all 4 composed resources, printed. No cluster involved.
+```
+
+Purity is why this works: the CLI runs the same function containers locally,
+feeds them a WebApp, shows the output. Put `crossplane render` in CI and
+*unit-test your platform* on every PR — zero infrastructure required.
 
 ## 16. Use the API — Create, Trace, Update, Delete a WebApp
 
